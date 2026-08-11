@@ -123,7 +123,7 @@ What currently exists:
 - manifest still retains both NeoForge 1.21.1 and Forge 1.20.1;
 - Forge implementation/runtime parity is intentionally deferred, not removed.
 
-Implementation checkpoints: `4ad22a1` (`wire neoforge browser bridge and showcase`) and `c494056` (`fix bridge bootstrap lifecycle and runtime acceptance`). The latest implementation closes the late host bootstrap race, makes connection precede host subscriptions, separates WebView READY from browser handshake, and hardens reload/close/session lifecycle. Documentation checkpoint is recorded in the following commit (`see git history`).
+Implementation checkpoints: `4ad22a1` (`wire neoforge browser bridge and showcase`), `c494056` (`fix bridge bootstrap lifecycle and runtime acceptance`), and `9b28e6a` (`preserve disconnected state on bridge close`). The latest implementation closes the late host bootstrap race, makes connection precede host subscriptions, separates WebView READY from browser handshake, and hardens reload/close/session lifecycle, including cancellation of pending connects after close. Documentation checkpoint is recorded in the following commit (`see git history`).
 
 Important review findings at this checkpoint:
 
