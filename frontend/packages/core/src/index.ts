@@ -180,6 +180,7 @@ export class DefaultMcWebClient implements McWebClient {
   private readonly remoteStates = new Set<string>();
   private readonly activatingStates = new Map<string, Promise<void>>();
   private readonly connectionListeners = new Set<ConnectionListener>();
+  private readonly closeRejectors = new Set<(error: McBridgeError) => void>();
   private readonly requestPrefix = Math.random().toString(36).slice(2);
   private requestSequence = 0;
   private stopListening: (() => void) | undefined;
@@ -202,23 +203,27 @@ export class DefaultMcWebClient implements McWebClient {
     if (this.handshakeValue) return this.handshakeValue;
     if (this.connecting) return this.connecting;
     this.setConnectionState("connecting");
-    this.connecting = (async () => {
+    const operation = (async () => {
       const handshake = this.transport.connect
         ? await this.transport.connect()
         : await this.sendRequest<BridgeHandshake>("mcwebui.handshake", {});
+      if (this.closed) throw new McBridgeError({ code: "VIEW_CLOSED", message: "Bridge closed" });
       if (!handshake || handshake.type !== "handshake") {
         throw new McBridgeError({ code: "TRANSPORT_ERROR", message: "Invalid bridge handshake" });
       }
       this.handshakeValue = handshake;
       await Promise.all([...this.states.keys()].map((channel) => this.ensureRemoteSubscription(channel)));
+      if (this.closed) throw new McBridgeError({ code: "VIEW_CLOSED", message: "Bridge closed" });
       this.setConnectionState("connected");
       return handshake;
     })();
+    this.connecting = this.awaitClose(operation);
     try { return await this.connecting; }
     catch (cause) {
       this.handshakeValue = null;
+      this.remoteStates.clear();
       const error = this.asError(cause);
-      this.setConnectionState("error", error);
+      if (!this.closed) this.setConnectionState("error", error);
       throw error;
     } finally { this.connecting = undefined; }
   }
@@ -271,11 +276,42 @@ export class DefaultMcWebClient implements McWebClient {
     // release their session subscriptions. The host close path also performs deterministic cleanup.
     for (const channel of this.remoteStates) void this.sendControl({ version: 1, type: "unsubscribe", channel }).catch(() => undefined);
     this.remoteStates.clear();
+    this.activatingStates.clear();
     this.stopListening?.(); this.stopListening = undefined;
     for (const pending of this.pending.values()) pending.reject(new McBridgeError({ code: "VIEW_CLOSED", message: "Bridge closed" }));
     this.pending.clear(); this.events.clear(); this.states.clear(); this.handshakeValue = null;
     this.setConnectionState("disconnected");
+    const error = new McBridgeError({ code: "VIEW_CLOSED", message: "Bridge closed" });
+    for (const reject of this.closeRejectors) reject(error);
+    this.closeRejectors.clear();
     this.transport.close?.();
+  }
+
+  private awaitClose<T>(operation: Promise<T>): Promise<T> {
+    if (this.closed) return Promise.reject(new McBridgeError({ code: "VIEW_CLOSED", message: "Bridge closed" }));
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const remove = () => this.closeRejectors.delete(rejectOnClose);
+      const rejectOnClose = (error: McBridgeError) => {
+        if (settled) return;
+        settled = true;
+        remove();
+        reject(error);
+      };
+      this.closeRejectors.add(rejectOnClose);
+      operation.then((value) => {
+        if (settled) return;
+        settled = true;
+        remove();
+        if (this.closed) reject(new McBridgeError({ code: "VIEW_CLOSED", message: "Bridge closed" }));
+        else resolve(value);
+      }, (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        remove();
+        reject(error);
+      });
+    });
   }
 
   private async ensureRemoteSubscription(channel: string): Promise<void> {

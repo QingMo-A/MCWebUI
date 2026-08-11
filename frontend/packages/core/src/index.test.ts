@@ -18,6 +18,7 @@ class FakeRoot {
   }
   removeEventListener(type: string, listener: () => void): void { this.events.get(type)?.delete(listener); }
   dispatch(type: string): void { for (const listener of this.events.get(type) ?? []) listener(); }
+  listenerCount(type: string): number { return this.events.get(type)?.size ?? 0; }
 }
 
 class FakeHost {
@@ -25,6 +26,7 @@ class FakeHost {
   readonly listeners = new Set<(message: BridgeMessage) => void>();
   readonly handshake: BridgeHandshake = { version: 1, type: "handshake", runtime: "mcwebui", capabilities: ["HANDSHAKE", "RPC", "STATE"] };
   closeCalls = 0;
+  subscribeCalls = 0;
   failSend = false;
   failConnect = false;
 
@@ -40,6 +42,7 @@ class FakeHost {
     }
   }
   subscribe(listener: (message: BridgeMessage) => void): () => void {
+    this.subscribeCalls++;
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -121,5 +124,28 @@ describe("client lifecycle ordering", () => {
     expect(messages.map((message) => message.type)).toEqual(["subscribe"]);
     expect(() => receive?.({ version: 1, type: "state", channel: "demo.counter", value: 2, revision: 1 })).not.toThrow();
     client.close();
+  });
+
+  it("cancels a pending late-host connect and ignores a host installed after close", async () => {
+    const root = new FakeRoot();
+    const transport = new DeferredWindowBridgeTransport(root);
+    const client = connect(transport);
+    const connecting = client.connect();
+    expect(client.connectionState).toBe("connecting");
+    expect(root.listenerCount(MCWEBUI_BRIDGE_READY_EVENT)).toBe(1);
+
+    client.close();
+    await expect(connecting).rejects.toMatchObject({ code: "VIEW_CLOSED" });
+    expect(client.connectionState).toBe("disconnected");
+    expect(root.listenerCount(MCWEBUI_BRIDGE_READY_EVENT)).toBe(0);
+
+    const host = new FakeHost();
+    root.__MCWEBUI_BRIDGE__ = host;
+    root.dispatch(MCWEBUI_BRIDGE_READY_EVENT);
+    await Promise.resolve();
+    expect(host.subscribeCalls).toBe(0);
+    expect(host.messages).toHaveLength(0);
+    await expect(client.connect()).rejects.toMatchObject({ code: "VIEW_CLOSED" });
+    await expect(client.invoke("demo.ping", {})).rejects.toMatchObject({ code: "VIEW_CLOSED" });
   });
 });
