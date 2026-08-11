@@ -23,3 +23,10 @@ type="required"
 versionRange="[1.21.1,1.22)"
 ordering="NONE"
 side="CLIENT"
+
+[[dependencies.mcwebui]]
+modId="mcef"
+type="required"
+versionRange="[2.1.6-1.21.1,)"
+ordering="AFTER"
+side="CLIENT"

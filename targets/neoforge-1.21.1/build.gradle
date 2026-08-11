@@ -1,5 +1,5 @@
 plugins {
-    id 'java'
+    id 'net.neoforged.moddev' version '2.0.141'
 }
 
 java {
@@ -8,8 +8,32 @@ java {
     }
 }
 
+sourceSets {
+    main {
+        java.srcDir(rootProject.file('common/src/main/java'))
+        resources.srcDir(rootProject.file('common/src/main/resources'))
+    }
+}
+
 dependencies {
-    implementation project(':common')
+    implementation 'net.neoforged:neoforge:21.1.216'
+    compileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
+    runtimeOnly 'com.cinemamod:mcef-neoforge:2.1.6-1.21.1'
+}
+
+neoForge {
+    version = '21.1.216'
+    runs {
+        client {
+            client()
+            gameDirectory = rootProject.file('run')
+        }
+    }
+    mods {
+        mcwebui {
+            sourceSet(sourceSets.main)
+        }
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -26,6 +50,3 @@ tasks.named('jar') {
         into('web/playground')
     }
 }
-
-// The MCEF candidate is documented in plans/phase-1-browser-runtime-plan.md. It is not declared
-// as a fake dependency: no maintained artifact currently verifies NeoForge 1.21.1 compatibility.
