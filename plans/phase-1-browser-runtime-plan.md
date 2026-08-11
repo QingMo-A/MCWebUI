@@ -1,6 +1,6 @@
 # Phase 1 — Browser Runtime Vertical Slice
 
-Status: **PLANNED**
+Status: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only scope)**
 
 Depends on: `plans/architecture-plan.md`
 
@@ -19,6 +19,12 @@ Phase 1 is complete when a packaged Vue application can:
 7. shut down/reopen without leaking browser views or textures.
 
 Visual polish is secondary to proving this path cleanly.
+
+### Scope checkpoint (2026-08-11)
+
+The user-directed checkpoint narrows new implementation and runtime acceptance to **NeoForge 1.21.1**. The Forge 1.20.1 module and manifest entry remain untouched as preserved project structure; no Forge runtime result is claimed here. The NeoForge native browser launch is blocked by dependency availability documented below. Common contracts and frontend semantics are implemented and locally tested without claiming an in-game launch.
+
+Implementation checkpoint commit: `5511d16` (`implement phase one browser runtime slice`).
 
 ## 2. Scope freeze
 
@@ -67,6 +73,22 @@ Do not copy dependency coordinates from old examples without verification.
 Record the selected versions and source references in this plan when implementation begins.
 
 The public MCWebUI API must remain backend-neutral even if both targets use the same MCEF implementation.
+
+### Verified dependency selections
+
+| component | selected version / candidate | source | reason and target compatibility |
+| --- | --- | --- | --- |
+| Gradle wrapper | 8.8 | [Gradle distribution](https://services.gradle.org/distributions/) | Compatible with the local JDK 17/21 toolchains and the verified NeoForge ModDevGradle line. |
+| ForgeGradle | `[6.0,6.2)` (research only) | [ForgeGradle 6.x docs](https://docs.minecraftforge.net/en/fg-6.x/) | Official range for Forge 1.20.1; Forge implementation is out of this scope checkpoint and is not applied. |
+| NeoForge build plugin | ModDevGradle `1.0.11` (research candidate) | [NeoForged ModDevGradle](https://github.com/neoforged/ModDevGradle) | Official plugin documents Gradle 8.8 compatibility and Java 21; not applied to a native run because the browser backend gate is unresolved. |
+| MCEF backend | CCBlueX `com.github.CCBlueX:mcef:3.1.0-1.21.4` (JitPack candidate) | [CCBlueX/mcef README](https://github.com/CCBlueX/mcef) | Maintained fork and native downloader are verified, but the published candidate targets 1.21.4, not NeoForge 1.21.1. It is therefore not declared as a fake/incompatible dependency; `NeoForgeMcefBackend` fails explicitly until a 1.21.1 artifact is verified. |
+| Forge MCEF reference | MCEF `2.1.6-1.20.1` (artifact listing only) | [CurseForge files](https://www.curseforge.com/minecraft/mc-mods/mcef/files/all?page=1&pageSize=20&version=1.20.1) | Confirms a historical Forge 1.20.1 build, but does not establish a shared backend with NeoForge 1.21.1 and is outside this checkpoint. |
+| Vue | `3.5.41` | [npm Vue registry](https://registry.npmjs.org/vue/latest) | Current stable Vue 3 release used by the shared playground. |
+| Vite | `8.2.1` | [npm Vite registry](https://registry.npmjs.org/vite/latest) and [Vite compatibility docs](https://vite.dev/guide/) | Current stable release; requires Node `^20.19.0 || >=22.12.0`. |
+| TypeScript | `7.0.2` | [npm TypeScript registry](https://registry.npmjs.org/typescript/latest) | Current stable compiler used for core/vue/playground typechecks. |
+| Node.js | `22.22.2` for local validation; requirement `>=20.19.0 || >=22.12.0` | [Node.js release archive](https://nodejs.org/en/download/archive/v22) | Satisfies Vite's documented engine requirement. |
+
+MCEF/JCEF native binaries are downloaded by the selected MCEF fork's own bootstrap/downloader; this repository does not copy unverified native binaries. The verified NeoForge 1.21.1 artifact gap is a real blocker for launching Minecraft, not a reason to leak MCEF types into common.
 
 ## 4. Vertical-slice architecture
 
@@ -308,6 +330,8 @@ One clean page showing:
 
 Do not spend Phase 1 building a full visual design system.
 
+Checkpoint result: `@mcwebui/core` implements `connect`, `invoke`, `on`, and `subscribe` with request IDs, pending Promise correlation, structured errors, event dispatch, state subscriptions, and a private `window.__MCWEBUI_BRIDGE__` transport adapter. `@mcwebui/vue` provides `useMcBridge`, `useMcState`, and `useMcRpc` without reimplementing transport. The playground is a real Vite/Vue app and is the only frontend bundle source of truth.
+
 ## 12. Build integration
 
 The frontend build must become part of the project build path once the playground is functional.
@@ -325,6 +349,10 @@ Forge/NeoForge JAR
 ```
 
 Avoid committed generated `dist/` output unless a later distribution requirement justifies it.
+
+Checkpoint result: `npm ci`, `npm run typecheck`, and `npm run build` pass locally. Root Gradle tasks `frontendInstall`, `frontendTypecheck`, and `frontendBuild` reuse the root lockfile and stage the shared `frontend/playground/dist` output into the NeoForge JAR. Generated output is ignored.
+
+NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `BBB0E8C1DCAE25720A20F2CB5E89EED5CA29753A7089E750C552BA46994711CC`. The packaged `index.html`, JS (`20F7346024F25C2A28020D145F108064D0A703305045A7496EBB3AA8AFE09808`), and CSS (`4F84F12437DB4BDFFB161196FA69200237FDF879B9CECFD3DA032B1372BFBA0E`) hashes match the single `frontend/playground/dist` source. The JAR contains common runtime classes, only the NeoForge adapter, `META-INF/neoforge.mods.toml`, and `web/playground` resources.
 
 The final target JAR should contain the same logical playground bundle on both supported targets.
 
@@ -352,6 +380,8 @@ A full-frame upload implementation is acceptable only as a temporary Phase 1 pat
 - the plan records measured cost for Phase 2.
 
 Do not bake a full-frame-per-Minecraft-frame assumption into public APIs.
+
+Checkpoint result: common `BrowserSurface`, `PaintFrame`, `DirtyRect`, `FrameMetrics`, and target texture-uploader ports are implemented. No native MCEF paint callback was executed because the NeoForge 1.21.1 backend candidate is unavailable; paint/upload counters are instrumentation hooks for the next runtime checkpoint.
 
 ## 14. Resize and scale
 
@@ -388,6 +418,8 @@ Required Phase 1 behavior:
 - Chinese IME/composition test.
 
 If the browser backend cannot support a required IME path on one target/platform, record it as an explicit capability deviation rather than silently declaring input complete.
+
+Checkpoint result: common input event semantics and NeoForge coordinate/GUI-scale translation are implemented and compile-tested. Mouse, wheel, keyboard, text, focus, clipboard, and Chinese IME remain **not runtime verified** until a real NeoForge browser surface is available; no synthetic `charTyped` claim is made.
 
 ## 16. Security acceptance
 
@@ -431,6 +463,8 @@ Before Phase 1 closes, establish commands for:
 
 Target manifest infrastructure may be expanded with lifecycle aliases only when the real loader Gradle plugins are installed, rather than adding fake run tasks during repository bootstrap.
 
+Checkpoint local results: `:common:test`, `:targets:neoforge-1.21.1:test`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets` pass. The preserved Forge target's existing Java test task also passes with no tests. These are local Gradle validations, not GitHub CI. `architectureCheck` verifies common has no Minecraft/loader/browser implementation imports and that no target-specific frontend source trees exist.
+
 ## 19. Performance baseline
 
 Phase 1 should collect a baseline rather than inventing unrealistic pass/fail numbers before hardware/backend behavior is known.
@@ -449,6 +483,8 @@ Measure on a documented machine/profile:
 - framebuffer upload throughput.
 
 Phase 2 performance gates should be derived from these measurements.
+
+Checkpoint result: only the lightweight `FrameMetrics` counters and dirty-rectangle data path are present. No FPS, memory, paint-rate, or upload-throughput numbers are reported because Minecraft could not be launched without a verified NeoForge 1.21.1 MCEF backend.
 
 ## 20. Commit discipline
 
@@ -473,19 +509,19 @@ Never force push shared `bridge` history.
 
 Phase 1 may be marked `CLOSED / VERIFIED` only when all are true:
 
-- [ ] Forge 1.20.1 launches the MCWebUI playground screen.
-- [ ] NeoForge 1.21.1 launches the same logical playground screen.
+- [ ] Forge 1.20.1 launches the MCWebUI playground screen (out of scope for this checkpoint).
+- [ ] NeoForge 1.21.1 launches the MCWebUI playground screen (blocked by verified MCEF artifact availability).
 - [ ] bundled Vue assets load from the mod/JAR without external server dependency.
-- [ ] mouse/wheel/keyboard/text focus work.
-- [ ] Chinese input has been tested and result documented.
-- [ ] JS → Java typed RPC works.
-- [ ] Java → Vue reactive state works.
+- [ ] mouse/wheel/keyboard/text focus work in a real game (ports implemented; runtime pending).
+- [ ] Chinese input has been tested and result documented (runtime pending; no synthetic claim).
+- [x] JS → Java typed RPC semantics are implemented and common-tested.
+- [x] Java → Vue reactive state semantics are implemented and common-tested.
 - [ ] malformed/untrusted bridge calls are rejected.
-- [ ] screen close/reopen leaves no obvious browser/texture leak.
-- [ ] resize/GUI-scale path is verified.
-- [ ] frontend production build succeeds.
-- [ ] both target builds succeed.
-- [ ] baseline performance metrics are recorded.
+- [ ] screen close/reopen leaves no obvious browser/texture leak in-game (common lifecycle is tested; runtime pending).
+- [ ] resize/GUI-scale path is verified in-game (translation port is compile-tested; runtime pending).
+- [x] frontend production build succeeds.
+- [x] NeoForge target Java/JAR build succeeds locally; native loader build is blocked by MCEF selection.
+- [ ] baseline performance metrics are recorded (instrumentation only).
 - [ ] no Minecraft/loader/browser implementation types leak into common public contracts.
 
 ## 22. Next phase
