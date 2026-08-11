@@ -9,7 +9,6 @@ public interface BrowserSurface extends AutoCloseable {
     void resize(int width, int height);
     void input(WebInputEvent event);
     FrameMetrics metrics();
-    default int textureId() { return -1; }
     @Override
     void close();
 }

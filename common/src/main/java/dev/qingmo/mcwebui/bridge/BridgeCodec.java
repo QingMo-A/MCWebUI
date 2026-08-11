@@ -33,6 +33,10 @@ public final class BridgeCodec {
         } else if (message instanceof BridgeHandshake handshake) {
                 envelope.put("runtime", handshake.runtime());
                 envelope.put("capabilities", handshake.capabilities().stream().map(Enum::name).toList());
+        } else if (message instanceof BridgeSubscribe subscribe) {
+                envelope.put("channel", subscribe.channel());
+        } else if (message instanceof BridgeUnsubscribe unsubscribe) {
+                envelope.put("channel", unsubscribe.channel());
         } else {
             throw new IllegalArgumentException("Unsupported bridge message: " + message.getClass());
         }
@@ -65,6 +69,8 @@ public final class BridgeCodec {
                 for (Object value : values) capabilities.add(BridgeCapability.valueOf(String.valueOf(value)));
                 yield new BridgeHandshake(version, String.valueOf(map.getOrDefault("runtime", "mcwebui")), capabilities);
             }
+            case "subscribe" -> new BridgeSubscribe(version, string(map, "channel"));
+            case "unsubscribe" -> new BridgeUnsubscribe(version, string(map, "channel"));
             default -> throw new IllegalArgumentException("Unknown bridge message type: " + type);
         };
     }

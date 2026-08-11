@@ -27,6 +27,7 @@ public final class NeoForgeClientEntrypoint {
         MCEF.scheduleForInit(success -> {
             mcefReady = success;
             if (success) {
+                NeoForgeMcefBackend.installRuntimeHooks();
                 MCEF.getApp().getHandle().registerSchemeHandlerFactory("mcui", "", (browser, frame, url, request) -> new McuiSchemeHandler(url));
             }
         });

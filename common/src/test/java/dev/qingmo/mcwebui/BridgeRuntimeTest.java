@@ -5,6 +5,9 @@ import dev.qingmo.mcwebui.bridge.BridgeCodec;
 import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
 import dev.qingmo.mcwebui.bridge.BridgeRequest;
 import dev.qingmo.mcwebui.bridge.BridgeResponse;
+import dev.qingmo.mcwebui.bridge.BridgeStateUpdate;
+import dev.qingmo.mcwebui.bridge.BridgeSubscribe;
+import dev.qingmo.mcwebui.bridge.BridgeUnsubscribe;
 import dev.qingmo.mcwebui.bridge.WebBridge;
 import dev.qingmo.mcwebui.runtime.DefaultWebRuntime;
 import dev.qingmo.mcwebui.runtime.WebView;
@@ -43,6 +46,16 @@ class BridgeRuntimeTest {
     }
 
     @Test
+    void explicitStateSubscriptionOperationsRoundTrip() {
+        assertEquals(new BridgeSubscribe("demo.counter"), BridgeCodec.decode(BridgeCodec.encode(new BridgeSubscribe("demo.counter"))));
+        assertEquals(new BridgeUnsubscribe("demo.counter"), BridgeCodec.decode(BridgeCodec.encode(new BridgeUnsubscribe("demo.counter"))));
+        var state = (BridgeStateUpdate) BridgeCodec.decode(BridgeCodec.encode(new BridgeStateUpdate("demo.counter", 4, 2)));
+        assertEquals("demo.counter", state.channel());
+        assertEquals(4.0, ((Number) state.value()).doubleValue());
+        assertEquals(2, state.revision());
+    }
+
+    @Test
     void unknownMalformedAndThrowingHandlersBecomeStructuredErrors() {
         BridgeDispatcher dispatcher = new BridgeDispatcher()
                 .register("demo.fail", request -> { throw new IllegalStateException("secret"); });
@@ -76,6 +89,18 @@ class BridgeRuntimeTest {
         store.publish("demo.counter", 5);
         assertEquals(java.util.List.of(3, 4), seen);
         assertEquals(0, store.subscriberCount("demo.counter"));
+    }
+
+    @Test
+    void bridgeSessionResetRequiresHandshakeAgain() {
+        WebPermissionPolicy policy = new WebPermissionPolicy(EnumSet.of(BridgeCapability.HANDSHAKE, BridgeCapability.RPC), false);
+        BridgeDispatcher dispatcher = new BridgeDispatcher().register("demo.ping", request -> Map.of("ok", true));
+        WebBridge bridge = new WebBridge(WebOrigin.mcui("playground"), policy, dispatcher, new WebStateStore());
+        assertTrue(bridge.request(new BridgeRequest("before", "demo.ping", Map.of())).error() != null);
+        bridge.handshake();
+        assertTrue(bridge.request(new BridgeRequest("ok", "demo.ping", Map.of())).success());
+        bridge.resetSession();
+        assertEquals("CAPABILITY_DENIED", bridge.request(new BridgeRequest("after", "demo.ping", Map.of())).error().code());
     }
 
     @Test

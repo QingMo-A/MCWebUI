@@ -93,6 +93,15 @@ public final class WebBridge implements AutoCloseable {
     public WebStateStore stateStore() { return stateStore; }
     public boolean isClosed() { return closed; }
 
+    /**
+     * Forget the browser-side handshake when a page navigates away. The view remains usable for a
+     * later trusted reload, but every new page must explicitly handshake again.
+     */
+    public void resetSession() {
+        ensureOpen();
+        grantedCapabilities = Set.of();
+    }
+
     @Override
     public void close() {
         closed = true;

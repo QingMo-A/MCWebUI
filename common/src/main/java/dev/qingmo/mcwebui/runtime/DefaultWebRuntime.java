@@ -2,7 +2,6 @@ package dev.qingmo.mcwebui.runtime;
 
 import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
 import dev.qingmo.mcwebui.bridge.WebBridge;
-import dev.qingmo.mcwebui.input.WebInputEvent;
 import dev.qingmo.mcwebui.security.WebPermissionPolicy;
 import dev.qingmo.mcwebui.state.WebStateStore;
 
@@ -102,12 +101,6 @@ public final class DefaultWebRuntime implements WebRuntime {
         public synchronized void focus(boolean focused) {
             if (state.lifecycle() == WebViewLifecycle.CLOSED || state.lifecycle() == WebViewLifecycle.DISPOSED) return;
             state = new WebViewState(state.lifecycle(), state.width(), state.height(), focused);
-        }
-
-        @Override
-        public void dispatchInput(WebInputEvent event) {
-            if (state.lifecycle() != WebViewLifecycle.VISIBLE) return;
-            if (event == null) throw new NullPointerException("event");
         }
 
         @Override

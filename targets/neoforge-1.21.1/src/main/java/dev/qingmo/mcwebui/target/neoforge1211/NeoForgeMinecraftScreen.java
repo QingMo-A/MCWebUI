@@ -1,71 +1,40 @@
 package dev.qingmo.mcwebui.target.neoforge1211;
 
-import dev.qingmo.mcwebui.backend.BrowserSurface;
-import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
-import dev.qingmo.mcwebui.input.WebKeyEvent;
-import dev.qingmo.mcwebui.input.WebMouseEvent;
-import dev.qingmo.mcwebui.input.WebScrollEvent;
-import dev.qingmo.mcwebui.input.WebTextInputEvent;
-import dev.qingmo.mcwebui.runtime.DefaultWebRuntime;
-import dev.qingmo.mcwebui.runtime.WebRuntime;
-import dev.qingmo.mcwebui.runtime.WebView;
-import dev.qingmo.mcwebui.runtime.WebViewConfig;
-import dev.qingmo.mcwebui.security.WebOrigin;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.network.chat.Component;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
-/** Real NeoForge Screen boundary: Minecraft APIs stay in this target module. */
+/** The sole NeoForge Screen boundary; all browser/session work lives in NeoForgeWebSession. */
 public final class NeoForgeMinecraftScreen extends Screen {
-    private final WebRuntime runtime;
-    private final NeoForgeMcefBackend backend;
-    private final BridgeDispatcher dispatcher;
-    private final NeoForgeDemoBridge demo;
-    private WebView view;
-    private BrowserSurface surface;
+    private final NeoForgeWebSession session;
 
     public NeoForgeMinecraftScreen(BridgeDispatcher dispatcher, NeoForgeDemoBridge demo) {
         super(Component.literal("MCWebUI Runtime Demo"));
-        this.dispatcher = java.util.Objects.requireNonNull(dispatcher, "dispatcher");
-        this.demo = java.util.Objects.requireNonNull(demo, "demo");
-        this.runtime = new DefaultWebRuntime();
-        this.backend = new NeoForgeMcefBackend();
+        this.session = new NeoForgeWebSession(dispatcher, demo);
     }
 
-    @Override
-    protected void init() {
-        view = runtime.createView(new WebViewConfig(WebOrigin.mcui("playground"), "/index.html", Math.max(1, width), Math.max(1, height)));
-        view.initialize();
-        surface = backend.createSurface(view.config(), frame -> { /* MCEF uploads its texture in onPaint */ });
-        view.setVisible(true);
-        surface.resize(Math.max(1, (int) (width * minecraft.getWindow().getGuiScale())),
-                Math.max(1, (int) (height * minecraft.getWindow().getGuiScale())));
-        surface.load("mcui://playground/index.html");
-        demo.publishCounter(view.bridge());
+    @Override protected void init() {
+        session.init(width, height, minecraft.getWindow().getGuiScale());
     }
 
-    @Override
-    public void resize(Minecraft minecraft, int width, int height) {
+    @Override public void resize(Minecraft minecraft, int width, int height) {
         super.resize(minecraft, width, height);
-        if (view != null && surface != null) {
-            int scaleWidth = Math.max(1, (int) (width * minecraft.getWindow().getGuiScale()));
-            int scaleHeight = Math.max(1, (int) (height * minecraft.getWindow().getGuiScale()));
-            view.resize(scaleWidth, scaleHeight);
-            surface.resize(scaleWidth, scaleHeight);
-        }
+        session.resize(width, height, minecraft.getWindow().getGuiScale());
     }
 
-    @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
+        NeoForgeRenderableSurface surface = session.surface();
         if (surface == null || surface.textureId() < 0) return;
         RenderSystem.disableDepthTest();
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
@@ -80,23 +49,19 @@ public final class NeoForgeMinecraftScreen extends Screen {
         RenderSystem.enableDepthTest();
     }
 
-    @Override public boolean mouseClicked(double x, double y, int button) { input(new WebMouseEvent(WebMouseEvent.Type.DOWN, scaledX(x), scaledY(y), button)); return true; }
-    @Override public boolean mouseReleased(double x, double y, int button) { input(new WebMouseEvent(WebMouseEvent.Type.UP, scaledX(x), scaledY(y), button)); return true; }
-    @Override public void mouseMoved(double x, double y) { input(new WebMouseEvent(WebMouseEvent.Type.MOVE, scaledX(x), scaledY(y), -1)); }
-    @Override public boolean mouseScrolled(double x, double y, double scrollX, double scrollY) { input(new WebScrollEvent(scaledX(x), scaledY(y), scrollX, scrollY)); return true; }
-    @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers) { input(new WebKeyEvent(WebKeyEvent.Type.DOWN, keyCode, modifiers)); return true; }
-    @Override public boolean keyReleased(int keyCode, int scanCode, int modifiers) { input(new WebKeyEvent(WebKeyEvent.Type.UP, keyCode, modifiers)); return true; }
-    @Override public boolean charTyped(char codePoint, int modifiers) { input(new WebTextInputEvent(String.valueOf(codePoint), false, true)); return true; }
+    @Override public boolean mouseClicked(double x, double y, int button) { session.mouseButton(x, y, button, true); return true; }
+    @Override public boolean mouseReleased(double x, double y, int button) { session.mouseButton(x, y, button, false); return true; }
+    @Override public void mouseMoved(double x, double y) { session.mouseMove(x, y); }
+    @Override public boolean mouseScrolled(double x, double y, double scrollX, double scrollY) { session.mouseScroll(x, y, scrollX, scrollY); return true; }
+    @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) { onClose(); return true; }
+        session.key(keyCode, scanCode, modifiers, true); return true;
+    }
+    @Override public boolean keyReleased(int keyCode, int scanCode, int modifiers) { session.key(keyCode, scanCode, modifiers, false); return true; }
+    @Override public boolean charTyped(char codePoint, int modifiers) { session.text(String.valueOf(codePoint), false, true); return true; }
 
-    private void input(dev.qingmo.mcwebui.input.WebInputEvent event) { if (surface != null) surface.input(event); }
-    private double scaledX(double value) { return value * minecraft.getWindow().getGuiScale(); }
-    private double scaledY(double value) { return value * minecraft.getWindow().getGuiScale(); }
-
-    @Override
-    public void onClose() {
-        if (surface != null) surface.close();
-        if (view != null) view.close();
-        runtime.close();
+    @Override public void onClose() {
+        session.close();
         super.onClose();
     }
 }

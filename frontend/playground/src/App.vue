@@ -1,76 +1,156 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { useMcBridge, useMcState } from "@mcwebui/vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { McBridgeError } from "@mcwebui/core";
+import { useMcRpc, useMcState } from "@mcwebui/vue";
 
-const bridge = useMcBridge();
+const { client, state: connectionState, error: connectionError, connected, invoke } = useMcRpc();
 const counter = useMcState<number>("demo.counter", 0);
-const message = ref("hello");
-const pingResult = ref("—");
-const error = ref("");
-const input = ref("");
+const activeTab = ref("overview");
+const message = ref("hello from the showcase");
+const pingResult = ref("No request yet");
+const bridgeError = ref<{ code: string; message: string } | null>(null);
+const inputText = ref("");
+const notes = ref("Type English, numbers, or Chinese here. Try keyboard navigation and clipboard shortcuts.");
+const checked = ref(true);
+const choice = ref("bridge");
+const enabled = ref(true);
+const selectValue = ref("balanced");
+const rangeValue = ref(62);
+const progress = ref(72);
+const selectedSegment = ref("Vue");
+const showModal = ref(false);
+const toast = ref("");
+const loading = ref(false);
+const diagnostics = ref<Record<string, unknown>>({});
+const scrollItems = Array.from({ length: 14 }, (_, index) => ({
+  title: `Runtime signal ${String(index + 1).padStart(2, "0")}`,
+  detail: index % 2 ? "state channel is idle" : "paint observer is ready",
+}));
+let diagnosticsTimer: number | undefined;
+let toastTimer: number | undefined;
+
+const statusLabel = computed(() => ({ disconnected: "Disconnected", connecting: "Connecting", connected: "Connected", error: "Error" }[connectionState.value]));
+const statusClass = computed(() => `status-${connectionState.value}`);
+const displayError = computed(() => bridgeError.value ?? (connectionError.value ? { code: connectionError.value.code, message: connectionError.value.message } : null));
+const runtimeRows = computed(() => [
+  ["Target", diagnostics.value.targetId ?? "Waiting for runtime"],
+  ["Loader", diagnostics.value.loader ?? "—"],
+  ["Minecraft", diagnostics.value.minecraftVersion ?? "—"],
+  ["Browser", diagnostics.value.browserBackend ? `${diagnostics.value.browserBackend} ${diagnostics.value.browserVersion ?? ""}` : "—"],
+  ["Surface", diagnostics.value.surfacePhysicalWidth ? `${diagnostics.value.surfacePhysicalWidth} × ${diagnostics.value.surfacePhysicalHeight} px` : "—"],
+  ["GUI scale", diagnostics.value.guiScale ?? "—"],
+]);
 
 async function pingJava() {
-  error.value = "";
+  bridgeError.value = null;
   try {
-    const response = await bridge.invoke<{ message?: string; timestamp?: number }>("demo.ping", { message: message.value });
-    pingResult.value = `${response.message ?? "pong"} @ ${response.timestamp ?? "—"}`;
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause);
-  }
+    const response = await invoke<{ message?: string; timestamp?: number; echo?: unknown }>("demo.ping", { message: message.value });
+    pingResult.value = `${response.message ?? "pong"} · ${String(response.echo ?? message.value)} · ${response.timestamp ?? "—"}`;
+    notify("Ping crossed the CEF bridge");
+  } catch (cause) { setError(cause); }
 }
-
 async function incrementJavaState() {
-  error.value = "";
-  try {
-    await bridge.invoke("demo.counter.increment", { amount: 1 });
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause);
-  }
+  bridgeError.value = null;
+  try { await invoke("demo.counter.increment", { amount: 1 }); notify("Java published a new counter value"); }
+  catch (cause) { setError(cause); }
 }
+async function triggerBridgeError() {
+  bridgeError.value = null;
+  try { await invoke("demo.error", {}); }
+  catch (cause) { setError(cause); }
+}
+async function refreshDiagnostics() {
+  if (!connected.value) return;
+  try { diagnostics.value = await invoke<Record<string, unknown>>("runtime.diagnostics", {}); }
+  catch (cause) { setError(cause); }
+}
+function setError(cause: unknown) {
+  if (cause instanceof McBridgeError) bridgeError.value = { code: cause.code, message: cause.message };
+  else bridgeError.value = { code: "CLIENT_ERROR", message: cause instanceof Error ? cause.message : String(cause) };
+}
+function notify(messageText: string) {
+  toast.value = messageText;
+  if (toastTimer) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => { toast.value = ""; }, 2600);
+}
+onMounted(() => {
+  void client.connect().catch(() => undefined);
+  void refreshDiagnostics();
+  diagnosticsTimer = window.setInterval(() => void refreshDiagnostics(), 800);
+});
+onBeforeUnmount(() => {
+  if (diagnosticsTimer) window.clearInterval(diagnosticsTimer);
+  if (toastTimer) window.clearTimeout(toastTimer);
+});
 </script>
 
 <template>
-  <main class="page">
-    <header>
-      <p class="eyebrow">MCWebUI Runtime Demo</p>
-      <h1>Browser runtime vertical slice</h1>
-      <p class="lede">The same bundled Vue page is loaded through the <code>mcui://</code> resource protocol.</p>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">M</span><div><p class="eyebrow">MCWebUI</p><h1>Runtime showcase</h1></div></div>
+      <div class="topbar-meta"><span class="live-dot" :class="statusClass"></span><span>{{ statusLabel }}</span><span class="separator">·</span><span>{{ diagnostics.loader ?? "Target adapter" }}</span></div>
     </header>
 
-    <section class="grid">
-      <article class="card status-card">
-        <h2>Runtime</h2>
-        <dl>
-          <div><dt>Target</dt><dd>NeoForge 1.21.1</dd></div>
-          <div><dt>Browser</dt><dd>MCEF / CEF off-screen</dd></div>
-          <div><dt>Bridge</dt><dd :class="bridge.handshake ? 'ok' : 'pending'">{{ bridge.handshake ? 'Connected' : 'Connecting…' }}</dd></div>
-        </dl>
-      </article>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Showcase sections">
+        <p class="side-label">Explore</p>
+        <button v-for="item in [{id:'overview',label:'Overview',icon:'◈'},{id:'controls',label:'Controls',icon:'◌'},{id:'bridge',label:'Bridge Lab',icon:'↔'},{id:'runtime',label:'Runtime',icon:'⌁'},{id:'input',label:'Input Lab',icon:'⌨'}]" :key="item.id" class="nav-item" :class="{ active: activeTab === item.id }" @click="activeTab = item.id">
+          <span class="nav-icon">{{ item.icon }}</span>{{ item.label }}
+        </button>
+        <div class="sidebar-spacer"></div>
+        <div class="side-note"><span class="status-dot" :class="statusClass"></span><div><strong>{{ statusLabel }}</strong><small>CEF session</small></div></div>
+      </aside>
 
-      <article class="card counter-card">
-        <h2>Java state</h2>
-        <div class="counter">{{ counter }}</div>
-        <p class="muted">demo.counter · latest value subscription</p>
-        <button type="button" @click="incrementJavaState">Increment Java state</button>
-      </article>
+      <section class="content">
+        <section class="hero panel">
+          <div><p class="eyebrow">One shared Vue bundle · live target data</p><h2>Web UI that feels at home in Minecraft.</h2><p class="hero-copy">A compact integration laboratory for controls, browser rendering, and the Java bridge. Everything below is regular semantic HTML.</p></div>
+          <div class="hero-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+        </section>
 
-      <article class="card">
-        <h2>Typed RPC</h2>
-        <label>Message <input v-model="message" autocomplete="off" /></label>
-        <button type="button" @click="pingJava">Ping Java</button>
-        <output>{{ pingResult }}</output>
-      </article>
+        <div v-if="displayError" class="error-banner" role="alert"><span class="error-code">{{ displayError.code }}</span><span>{{ displayError.message }}</span><button class="icon-button" aria-label="Dismiss error" @click="bridgeError = null">×</button></div>
 
-      <article class="card">
-        <h2>Input / IME</h2>
-        <label>Chinese input test
-          <input v-model="input" placeholder="中文输入测试框" autocomplete="off" />
-        </label>
-        <p class="muted">Try English, numbers, 中文输入法, Backspace, Ctrl+A/C/V.</p>
-      </article>
-    </section>
+        <template v-if="activeTab === 'overview'">
+          <div class="metric-grid">
+            <article class="metric-card panel"><span class="metric-kicker">Connection</span><strong :class="statusClass">{{ statusLabel }}</strong><small>Reactive Vue binding</small></article>
+            <article class="metric-card panel"><span class="metric-kicker">Java state</span><strong>{{ counter }}</strong><small>demo.counter · latest value</small></article>
+            <article class="metric-card panel"><span class="metric-kicker">Paint callbacks</span><strong>{{ diagnostics.paintCallbacks ?? "—" }}</strong><small>Native texture path</small></article>
+          </div>
+          <div class="two-column">
+            <article class="panel section-card"><div class="section-heading"><div><p class="eyebrow">Bridge Lab</p><h3>Call Java, watch state move</h3></div><span class="badge badge-green">LIVE</span></div><p class="muted">Try a typed RPC and a Java-published counter update without refreshing the page.</p><div class="inline-form"><label for="overview-message">Message</label><input id="overview-message" v-model="message" autocomplete="off" @keyup.enter="pingJava" /><button class="button primary" @click="pingJava">Ping Java</button></div><output class="result-line">{{ pingResult }}</output><div class="counter-row"><span class="counter-value">{{ counter }}</span><button class="button secondary" @click="incrementJavaState">Increment state</button></div></article>
+            <article class="panel section-card"><div class="section-heading"><div><p class="eyebrow">Runtime identity</p><h3>Actual adapter diagnostics</h3></div><button class="icon-button" aria-label="Refresh diagnostics" @click="refreshDiagnostics">↻</button></div><dl class="detail-list"><div v-for="row in runtimeRows" :key="row[0]"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></div></dl></article>
+          </div>
+        </template>
 
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <footer>paint callbacks · texture uploads · surface size are reported by the target adapter.</footer>
+        <template v-else-if="activeTab === 'controls'">
+          <div class="section-heading page-heading"><div><p class="eyebrow">Component sampler</p><h2>Controls with real interaction states</h2><p class="muted">Experimental showcase composition, not a frozen component API.</p></div></div>
+          <div class="control-grid">
+            <article class="panel section-card"><p class="eyebrow">Actions</p><h3>Buttons</h3><div class="button-stack"><button class="button primary" @click="notify('Primary action received')">Primary action</button><button class="button secondary">Secondary</button><button class="button danger" @click="triggerBridgeError">Danger / error</button><button class="button secondary" :disabled="!enabled">Disabled</button><button class="button primary" :disabled="loading" @click="loading = !loading">{{ loading ? 'Loading…' : 'Toggle loading' }}</button></div></article>
+            <article class="panel section-card"><p class="eyebrow">Forms</p><h3>Inputs</h3><label class="field">Text input<input v-model="message" placeholder="Your message" /></label><label class="field">Textarea<textarea v-model="notes" rows="3"></textarea></label><div class="check-row"><label class="check"><input v-model="checked" type="checkbox" /> Enable notifications</label><label class="check"><input v-model="enabled" type="checkbox" /> Enable actions</label></div></article>
+            <article class="panel section-card"><p class="eyebrow">Choice</p><h3>Selection</h3><label class="field">Select<select v-model="selectValue"><option value="focused">Focused</option><option value="balanced">Balanced</option><option value="expressive">Expressive</option></select></label><div class="radio-list"><label class="check"><input v-model="choice" type="radio" value="bridge" /> Bridge first</label><label class="check"><input v-model="choice" type="radio" value="visual" /> Visual first</label></div><label class="switch-row"><span>Live updates</span><button class="switch" :class="{ on: enabled }" role="switch" :aria-checked="enabled" @click="enabled = !enabled"><span></span></button></label></article>
+            <article class="panel section-card"><p class="eyebrow">Feedback</p><h3>Progress & status</h3><div class="progress-label"><span>Bundle readiness</span><strong>{{ progress }}%</strong></div><progress :value="progress" max="100">{{ progress }}%</progress><label class="field">Range <input v-model="rangeValue" type="range" min="0" max="100" /></label><div class="badge-row"><span class="badge badge-green">Connected</span><span class="badge badge-amber">Preview</span><span class="badge badge-red">Error</span></div><div class="segmented" role="tablist"><button v-for="segment in ['Vue','Core','Browser']" :key="segment" :class="{ selected: selectedSegment === segment }" role="tab" @click="selectedSegment = segment">{{ segment }}</button></div></article>
+            <article class="panel section-card scroll-card"><div class="section-heading"><div><p class="eyebrow">Scrollable region</p><h3>Signal feed</h3></div><span class="badge">14 items</span></div><ul class="signal-list"><li v-for="item in scrollItems" :key="item.title"><span class="signal-icon">·</span><div><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div></li></ul></article>
+            <article class="panel section-card"><p class="eyebrow">Overlay</p><h3>Dialog & toast</h3><p class="muted">Feedback stays in context and remains keyboard reachable.</p><div class="button-row"><button class="button secondary" @click="showModal = true">Open dialog</button><button class="button secondary" @click="notify('This is a lightweight toast')">Show toast</button></div></article>
+          </div>
+        </template>
+
+        <template v-else-if="activeTab === 'bridge'">
+          <div class="section-heading page-heading"><div><p class="eyebrow">Real browser transport</p><h2>Bridge Lab</h2><p class="muted">Every action below crosses <code>window.__MCWEBUI_BRIDGE__</code> through the native browser query channel.</p></div><span class="badge badge-green">{{ statusLabel }}</span></div>
+          <div class="two-column bridge-grid"><article class="panel section-card"><div class="lab-number">01</div><h3>Ping</h3><p class="muted">Calls <code>demo.ping</code> and renders Java's pong, timestamp, and echo.</p><label class="field">Payload<input v-model="message" /></label><button class="button primary" @click="pingJava">Send ping</button><output class="result-box">{{ pingResult }}</output></article><article class="panel section-card"><div class="lab-number">02</div><h3>Reactive counter</h3><p class="muted">Subscribe to <code>demo.counter</code>; Java publishes the latest value.</p><div class="big-counter">{{ counter }}</div><button class="button primary" @click="incrementJavaState">Increment Java state</button><span class="muted tiny">No polling · state update message</span></article><article class="panel section-card"><div class="lab-number">03</div><h3>Structured error</h3><p class="muted">The safe demo handler throws and becomes a typed error envelope.</p><button class="button danger" @click="triggerBridgeError">Trigger error</button><div v-if="bridgeError" class="error-detail"><strong>{{ bridgeError.code }}</strong><span>{{ bridgeError.message }}</span></div></article></div>
+        </template>
+
+        <template v-else-if="activeTab === 'runtime'">
+          <div class="section-heading page-heading"><div><p class="eyebrow">Target adapter telemetry</p><h2>Runtime diagnostics</h2><p class="muted">Sampled every 800 ms to keep the render loop quiet.</p></div><button class="button secondary" @click="refreshDiagnostics">Refresh now</button></div>
+          <article class="panel diagnostics-panel"><div class="diagnostics-grid"><div v-for="row in runtimeRows" :key="row[0]" class="diagnostic-cell"><span>{{ row[0] }}</span><strong>{{ row[1] }}</strong></div></div><div class="diagnostics-grid secondary-grid"><div class="diagnostic-cell"><span>Texture uploads</span><strong>{{ diagnostics.textureUploads ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Uploaded bytes</span><strong>{{ diagnostics.uploadedBytes ?? "—" }}</strong></div><div class="diagnostic-cell"><span>View state</span><strong>{{ diagnostics.viewState ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Session state</span><strong>{{ diagnostics.sessionState ?? "—" }}</strong></div></div></article>
+        </template>
+
+        <template v-else>
+          <div class="section-heading page-heading"><div><p class="eyebrow">Input routing</p><h2>Input Lab</h2><p class="muted">Focus, selection, keyboard shortcuts, wheel, and text routing are forwarded by the active target screen.</p></div></div>
+          <div class="two-column"><article class="panel section-card input-lab"><h3>Single-line input</h3><input v-model="inputText" class="large-input" aria-label="Single line input" placeholder="Try English, numbers, 中文输入法" /><p class="input-readout">{{ inputText || "Nothing typed yet" }}</p><h3>Multiline textarea</h3><textarea v-model="notes" rows="7" aria-label="Multiline input"></textarea><p class="muted tiny">Try Backspace, Delete, Arrow keys, Tab, Shift+Tab, Ctrl+A/C/V. Chinese IME: implemented in the input model, not manually verified in this environment.</p></article><article class="panel section-card"><p class="eyebrow">Routing checklist</p><h3>What to try</h3><ul class="checklist"><li><span>01</span><div><strong>Mouse & wheel</strong><small>Hover, click, and scroll this panel.</small></div></li><li><span>02</span><div><strong>Keyboard</strong><small>Tab through controls; Escape closes the screen.</small></div></li><li><span>03</span><div><strong>Clipboard</strong><small>Use Ctrl+A, Ctrl+C, and Ctrl+V inside the fields.</small></div></li><li><span>04</span><div><strong>Composition</strong><small>Native char events are forwarded; IME remains not manually verified.</small></div></li></ul></article></div>
+        </template>
+        <footer class="footer">MCWebUI · common semantics · one shared target-neutral bundle</footer>
+      </section>
+    </div>
+    <div v-if="toast" class="toast" role="status"><span class="toast-mark">✓</span>{{ toast }}</div>
+    <div v-if="showModal" class="modal-backdrop" @click.self="showModal = false"><section class="modal panel" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="icon-button modal-close" aria-label="Close dialog" @click="showModal = false">×</button><span class="modal-icon">✦</span><h2 id="modal-title">A focused overlay</h2><p class="muted">This dialog is rendered by the same Vue bundle and stays inside the browser surface.</p><button class="button primary" @click="showModal = false">Continue</button></section></div>
   </main>
 </template>
