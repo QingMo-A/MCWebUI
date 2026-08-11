@@ -35,17 +35,25 @@ public final class NeoForgeMinecraftScreen extends Screen {
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         NeoForgeRenderableSurface surface = session.surface();
-        if (surface == null || surface.textureId() < 0) return;
+        if (surface == null) return;
+        int textureId = surface.textureId();
+        // MCEF exposes texture id 0 until its render-thread initialization has completed;
+        // binding it would draw the default texture and make the screen look permanently blank.
+        if (textureId <= 0) return;
         RenderSystem.disableDepthTest();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderTexture(0, surface.textureId());
+        RenderSystem.setShaderTexture(0, textureId);
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder buffer = tesselator.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-        buffer.addVertex(0, height, 0).setUv(0, 1);
-        buffer.addVertex(width, height, 0).setUv(1, 1);
-        buffer.addVertex(width, 0, 0).setUv(1, 0);
-        buffer.addVertex(0, 0, 0).setUv(0, 0);
-        BufferUploader.drawWithShader(buffer.build());
+        var pose = graphics.pose().last().pose();
+        buffer.addVertex(pose, 0, 0, 0).setUv(0, 0);
+        buffer.addVertex(pose, 0, height, 0).setUv(0, 1);
+        buffer.addVertex(pose, width, height, 0).setUv(1, 1);
+        buffer.addVertex(pose, width, 0, 0).setUv(1, 0);
+        BufferUploader.drawWithShader(buffer.buildOrThrow());
+        RenderSystem.disableBlend();
         RenderSystem.enableDepthTest();
     }
 

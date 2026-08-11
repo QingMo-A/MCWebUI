@@ -64,7 +64,10 @@ public final class BridgeCodec {
             case "event" -> new BridgeEvent(version, string(map, "channel"), mapValue(map, "payload"));
             case "state" -> new BridgeStateUpdate(version, string(map, "channel"), map.get("value"), number(map, "revision").longValue());
             case "handshake" -> {
-                List<Object> values = list(map, "capabilities");
+                // Browser negotiation starts with the minimal
+                // {version,type:"handshake"} envelope. The host response supplies the
+                // runtime and negotiated capabilities.
+                List<Object> values = map.containsKey("capabilities") ? list(map, "capabilities") : List.of();
                 java.util.EnumSet<BridgeCapability> capabilities = java.util.EnumSet.noneOf(BridgeCapability.class);
                 for (Object value : values) capabilities.add(BridgeCapability.valueOf(String.valueOf(value)));
                 yield new BridgeHandshake(version, String.valueOf(map.getOrDefault("runtime", "mcwebui")), capabilities);

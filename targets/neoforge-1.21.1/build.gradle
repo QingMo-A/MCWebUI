@@ -19,6 +19,8 @@ dependencies {
     implementation 'net.neoforged:neoforge:21.1.216'
     compileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
     runtimeOnly 'com.cinemamod:mcef-neoforge:2.1.6-1.21.1'
+    testCompileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
 }
 
 neoForge {
@@ -41,12 +43,19 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 21
 }
 
-tasks.named('jar') {
-    dependsOn(project(':common').tasks.named('jar'))
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
+tasks.named('processResources') {
     dependsOn(rootProject.tasks.named('frontendBuild'))
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from({ zipTree(project(':common').tasks.named('jar').get().archiveFile.get().asFile) })
     from(rootProject.file('frontend/playground/dist')) {
         into('web/playground')
     }
+}
+
+tasks.named('jar') {
+    dependsOn(project(':common').tasks.named('jar'))
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from({ zipTree(project(':common').tasks.named('jar').get().archiveFile.get().asFile) })
 }

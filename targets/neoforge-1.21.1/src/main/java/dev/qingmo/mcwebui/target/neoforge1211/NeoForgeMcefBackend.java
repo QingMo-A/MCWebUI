@@ -194,7 +194,13 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
             if (surface != null && frame.isMain()) surface.onLoadEnd(frame.getURL());
         }
         @Override public void onLoadError(CefBrowser browser, org.cef.browser.CefFrame frame,
-                                          ErrorCode errorCode, String errorText, String failedUrl) { }
+                                          ErrorCode errorCode, String errorText, String failedUrl) {
+            if (frame == null || !frame.isMain()) return;
+            McefSurface surface = SURFACES.get(browser);
+            if (surface == null) return;
+            String target = isTrustedUrl(failedUrl, surface.config) ? trustedPath(failedUrl) : "<untrusted>";
+            MCEF.getLogger().warn("MCWebUI browser load failed for {}: {} ({})", target, errorCode, errorText);
+        }
     }
 
     private static boolean isTrustedUrl(String value, WebViewConfig config) {
@@ -205,6 +211,15 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
                     && config.origin().host().equalsIgnoreCase(uri.getHost())
                     && uri.getRawQuery() == null && uri.getRawFragment() == null;
         } catch (RuntimeException ex) { return false; }
+    }
+
+    private static String trustedPath(String value) {
+        try {
+            java.net.URI uri = java.net.URI.create(value);
+            return uri.getPath() == null ? "/" : uri.getPath();
+        } catch (RuntimeException ex) {
+            return "/";
+        }
     }
 
     /** One browser-side session. It translates CefQuery envelopes into common WebBridge operations. */

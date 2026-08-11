@@ -22,6 +22,7 @@ import java.util.Objects;
 
 /** Single NeoForge screen-owned composition of common view, MCEF surface and bridge session. */
 final class NeoForgeWebSession implements AutoCloseable {
+    private static final String PLAYGROUND_HOST = "playground.mcwebui";
     private final WebRuntime runtime;
     private final BrowserBackend backend;
     private final NeoForgeDemoBridge demo;
@@ -54,13 +55,13 @@ final class NeoForgeWebSession implements AutoCloseable {
         int width = physical(guiWidth, guiScale);
         int height = physical(guiHeight, guiScale);
         try {
-            view = runtime.createView(new WebViewConfig(WebOrigin.mcui("playground"), "/index.html", width, height));
+            view = runtime.createView(new WebViewConfig(WebOrigin.mcui(PLAYGROUND_HOST), "/index.html", width, height));
             view.initialize();
             surface = (NeoForgeRenderableSurface) backend.createSurface(view.config(), view.bridge());
             view.setVisible(true);
             view.focus(true);
             surface.resize(width, height);
-            surface.load("mcui://playground/index.html");
+            surface.load("mcui://" + PLAYGROUND_HOST + "/index.html");
             demo.setDiagnosticsSupplier(this::diagnostics);
             demo.publishCounter(view.bridge());
             initialized = true;

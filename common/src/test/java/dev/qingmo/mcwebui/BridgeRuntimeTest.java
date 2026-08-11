@@ -3,6 +3,7 @@ package dev.qingmo.mcwebui;
 import dev.qingmo.mcwebui.bridge.BridgeCapability;
 import dev.qingmo.mcwebui.bridge.BridgeCodec;
 import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
+import dev.qingmo.mcwebui.bridge.BridgeHandshake;
 import dev.qingmo.mcwebui.bridge.BridgeRequest;
 import dev.qingmo.mcwebui.bridge.BridgeResponse;
 import dev.qingmo.mcwebui.bridge.BridgeStateUpdate;
@@ -43,6 +44,13 @@ class BridgeRuntimeTest {
         var decoded = BridgeCodec.decode(BridgeCodec.encode(original));
         assertInstanceOf(BridgeRequest.class, decoded);
         assertEquals(original, decoded);
+    }
+
+    @Test
+    void bridgeCodecAcceptsMinimalBrowserHandshakeRequest() {
+        var handshake = (BridgeHandshake) BridgeCodec.decode("{\"version\":1,\"type\":\"handshake\"}");
+        assertEquals("mcwebui", handshake.runtime());
+        assertTrue(handshake.capabilities().isEmpty());
     }
 
     @Test
