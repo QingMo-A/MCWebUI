@@ -104,6 +104,32 @@ class BridgeRuntimeTest {
     }
 
     @Test
+    void viewReadyDoesNotNegotiateBrowserHandshake() {
+        WebPermissionPolicy policy = new WebPermissionPolicy(EnumSet.of(BridgeCapability.HANDSHAKE, BridgeCapability.RPC), false);
+        BridgeDispatcher dispatcher = new BridgeDispatcher().register("demo.ping", request -> Map.of("ok", true));
+        DefaultWebRuntime runtime = new DefaultWebRuntime(policy, dispatcher);
+        WebView view = runtime.createView(new WebViewConfig(WebOrigin.mcui("playground"), "/index.html", 320, 200));
+        view.initialize();
+        assertEquals(WebViewLifecycle.READY, view.state().lifecycle());
+        assertFalse(view.bridge().hasGrantedCapability(BridgeCapability.RPC));
+        assertEquals("CAPABILITY_DENIED", view.bridge().request(new BridgeRequest("before", "demo.ping", Map.of())).error().code());
+        assertEquals("mcwebui", view.bridge().handshake().runtime());
+        assertTrue(view.bridge().request(new BridgeRequest("after", "demo.ping", Map.of())).success());
+        runtime.close();
+    }
+
+    @Test
+    void hostPublishesStateBeforeHandshakeButBrowserSubscriptionNeedsCapability() {
+        WebPermissionPolicy policy = new WebPermissionPolicy(EnumSet.of(BridgeCapability.HANDSHAKE, BridgeCapability.STATE), false);
+        WebBridge bridge = new WebBridge(WebOrigin.mcui("playground"), policy, new BridgeDispatcher(), new WebStateStore());
+        bridge.publishState("demo.counter", 4);
+        assertEquals(4, bridge.stateStore().latest("demo.counter").value());
+        assertThrows(SecurityException.class, () -> bridge.subscribeState("demo.counter", update -> { }));
+        bridge.handshake();
+        assertDoesNotThrow(() -> bridge.subscribeState("demo.counter", update -> { }).close());
+    }
+
+    @Test
     void viewLifecycleClosesBridgeAndRemovesView() {
         DefaultWebRuntime runtime = new DefaultWebRuntime();
         WebView view = runtime.createView(new WebViewConfig(WebOrigin.mcui("playground"), "/index.html", 320, 200));

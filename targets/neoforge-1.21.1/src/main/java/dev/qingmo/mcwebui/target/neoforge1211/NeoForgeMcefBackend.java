@@ -5,6 +5,7 @@ import com.cinemamod.mcef.MCEFBrowser;
 import dev.qingmo.mcwebui.backend.BrowserBackend;
 import dev.qingmo.mcwebui.backend.BrowserSurface;
 import dev.qingmo.mcwebui.backend.FrameMetrics;
+import dev.qingmo.mcwebui.bridge.BridgeCapability;
 import dev.qingmo.mcwebui.bridge.BridgeCodec;
 import dev.qingmo.mcwebui.bridge.BridgeError;
 import dev.qingmo.mcwebui.bridge.BridgeHandshake;
@@ -164,7 +165,6 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
             super.onPaint(browser, popup, dirtyRects, buffer, width, height);
             if (!popup) {
                 metrics.recordPaint(width, height);
-                metrics.recordUpload((long) width * height * 4L);
             }
         }
     }
@@ -237,6 +237,7 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
                 } else if (message instanceof BridgeRequest rpc) {
                     callback.success(BridgeCodec.encode(bridge.request(rpc)));
                 } else if (message instanceof BridgeSubscribe subscribe) {
+                    bridge.requireBrowserCapability(BridgeCapability.STATE);
                     subscribe(subscribe.channel());
                     callback.success("{}");
                 } else if (message instanceof BridgeUnsubscribe unsubscribe) {
@@ -275,8 +276,11 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
             bootstrapInstalled = false;
             subscriptions.values().forEach(dev.qingmo.mcwebui.state.WebStateSubscription::close);
             subscriptions.clear();
+            queuedMessages.clear();
             bridge.resetSession();
-            if (!trusted && browser != null) {
+            if (browser != null) {
+                // Clear the previous page's globals for both trusted reloads and untrusted
+                // navigations. A subsequent trusted load receives a fresh bootstrap object.
                 browser.executeJavaScript("delete window.__MCWEBUI_BRIDGE__; delete window.__MCWEBUI_BRIDGE_DELIVER__;", browser.getURL(), 0);
             }
         }
@@ -293,7 +297,7 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
         }
 
         private String bootstrapScript() {
-            return "(() => {const listeners=new Set();let closed=false;const deliver=(m)=>{if(closed)return;try{const v=typeof m==='string'?JSON.parse(m):m;listeners.forEach((l)=>{try{l(v)}catch(_){}})}catch(_){} };const call=(m)=>new Promise((resolve,reject)=>{if(closed){reject(new Error('Bridge closed'));return}try{window.cefQuery({request:JSON.stringify(m),onSuccess:(raw)=>{try{const v=JSON.parse(raw);deliver(v);resolve(v)}catch(e){reject(e)}},onFailure:(code,msg)=>reject(Object.assign(new Error(msg||'Bridge query failed'),{code}))})}catch(e){reject(e)}});window.__MCWEBUI_BRIDGE_DELIVER__=deliver;window.__MCWEBUI_BRIDGE__={connect:()=>call({version:1,type:'handshake'}),send:(m)=>call(m).then(()=>undefined),subscribe:(l)=>{listeners.add(l);return()=>listeners.delete(l)},close:()=>{closed=true;listeners.clear();delete window.__MCWEBUI_BRIDGE__;delete window.__MCWEBUI_BRIDGE_DELIVER__}}})()";
+            return "(() => {const listeners=new Set();let closed=false;const deliver=(m)=>{if(closed)return;try{const v=typeof m==='string'?JSON.parse(m):m;listeners.forEach((l)=>{try{l(v)}catch(_){}})}catch(_){} };const call=(m)=>new Promise((resolve,reject)=>{if(closed){reject(new Error('Bridge closed'));return}try{window.cefQuery({request:JSON.stringify(m),onSuccess:(raw)=>{try{const v=JSON.parse(raw);deliver(v);resolve(v)}catch(e){reject(e)}},onFailure:(code,msg)=>reject(Object.assign(new Error(msg||'Bridge query failed'),{code}))})}catch(e){reject(e)}});window.__MCWEBUI_BRIDGE_DELIVER__=deliver;window.__MCWEBUI_BRIDGE__={connect:()=>call({version:1,type:'handshake'}),send:(m)=>call(m).then(()=>undefined),subscribe:(l)=>{listeners.add(l);return()=>listeners.delete(l)},close:()=>{closed=true;listeners.clear();delete window.__MCWEBUI_BRIDGE__;delete window.__MCWEBUI_BRIDGE_DELIVER__}};window.dispatchEvent(new Event('__MCWEBUI_BRIDGE_READY__'))})()";
         }
 
         @Override public synchronized void close() {

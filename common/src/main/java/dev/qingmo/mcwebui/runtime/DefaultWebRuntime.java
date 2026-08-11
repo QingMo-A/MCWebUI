@@ -72,7 +72,6 @@ public final class DefaultWebRuntime implements WebRuntime {
             if (state.lifecycle() != WebViewLifecycle.CREATED) return;
             state = new WebViewState(WebViewLifecycle.INITIALIZING, state.width(), state.height(), state.focused());
             try {
-                bridge.handshake();
                 state = new WebViewState(WebViewLifecycle.READY, state.width(), state.height(), state.focused());
             } catch (RuntimeException ex) {
                 state = new WebViewState(WebViewLifecycle.FAILED, state.width(), state.height(), state.focused());

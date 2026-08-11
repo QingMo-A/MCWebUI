@@ -29,6 +29,8 @@ export function useMcState<T>(channel: string, initialValue: T): Ref<T> {
   let unsubscribe: (() => void) | undefined;
   const subscribe = () => {
     unsubscribe = client.subscribe<T>(channel, (update) => { value.value = update.value; });
+    // Register the local listener first; core activates the host subscription only after
+    // handshake negotiation. Multiple composables share that lifecycle through the client.
     void client.connect().catch(() => undefined);
   };
   if (typeof window === "undefined") subscribe(); else onMounted(subscribe);

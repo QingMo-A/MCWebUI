@@ -28,6 +28,9 @@ final class NeoForgeWebSession implements AutoCloseable {
     private WebView view;
     private NeoForgeRenderableSurface surface;
     private double guiScale = 1.0;
+    private int minecraftGuiWidth;
+    private int minecraftGuiHeight;
+    private boolean initialized;
     private volatile boolean closed;
 
     NeoForgeWebSession(BridgeDispatcher dispatcher, NeoForgeDemoBridge demo) {
@@ -41,23 +44,37 @@ final class NeoForgeWebSession implements AutoCloseable {
 
     void init(int guiWidth, int guiHeight, double guiScale) {
         if (closed) throw new IllegalStateException("Session is closed");
+        if (initialized) {
+            resize(guiWidth, guiHeight, guiScale);
+            return;
+        }
         this.guiScale = requireScale(guiScale);
+        this.minecraftGuiWidth = requireDimension(guiWidth, "guiWidth");
+        this.minecraftGuiHeight = requireDimension(guiHeight, "guiHeight");
         int width = physical(guiWidth, guiScale);
         int height = physical(guiHeight, guiScale);
-        view = runtime.createView(new WebViewConfig(WebOrigin.mcui("playground"), "/index.html", width, height));
-        view.initialize();
-        surface = (NeoForgeRenderableSurface) backend.createSurface(view.config(), view.bridge());
-        view.setVisible(true);
-        view.focus(true);
-        surface.resize(width, height);
-        surface.load("mcui://playground/index.html");
-        demo.setDiagnosticsSupplier(this::diagnostics);
-        demo.publishCounter(view.bridge());
+        try {
+            view = runtime.createView(new WebViewConfig(WebOrigin.mcui("playground"), "/index.html", width, height));
+            view.initialize();
+            surface = (NeoForgeRenderableSurface) backend.createSurface(view.config(), view.bridge());
+            view.setVisible(true);
+            view.focus(true);
+            surface.resize(width, height);
+            surface.load("mcui://playground/index.html");
+            demo.setDiagnosticsSupplier(this::diagnostics);
+            demo.publishCounter(view.bridge());
+            initialized = true;
+        } catch (RuntimeException ex) {
+            close();
+            throw ex;
+        }
     }
 
     void resize(int guiWidth, int guiHeight, double guiScale) {
         if (closed || view == null || surface == null) return;
         this.guiScale = requireScale(guiScale);
+        this.minecraftGuiWidth = requireDimension(guiWidth, "guiWidth");
+        this.minecraftGuiHeight = requireDimension(guiHeight, "guiHeight");
         int width = physical(guiWidth, guiScale);
         int height = physical(guiHeight, guiScale);
         view.resize(width, height);
@@ -95,14 +112,15 @@ final class NeoForgeWebSession implements AutoCloseable {
         info.put("javaVersion", 21);
         info.put("browserBackend", "CinemaMod MCEF");
         info.put("browserVersion", "2.1.6-1.21.1");
-        info.put("surfaceCssWidth", view == null ? 0 : view.state().width());
-        info.put("surfaceCssHeight", view == null ? 0 : view.state().height());
-        info.put("surfacePhysicalWidth", surface == null ? 0 : surface.width());
-        info.put("surfacePhysicalHeight", surface == null ? 0 : surface.height());
+        info.put("minecraftGuiWidth", minecraftGuiWidth);
+        info.put("minecraftGuiHeight", minecraftGuiHeight);
+        info.put("browserViewportWidth", surface == null ? 0 : surface.width());
+        info.put("browserViewportHeight", surface == null ? 0 : surface.height());
         info.put("guiScale", guiScale);
         info.put("paintCallbacks", surface == null ? 0L : surface.metrics().paintCallbacks());
-        info.put("textureUploads", surface == null ? 0L : surface.metrics().uploadedFrames());
-        info.put("uploadedBytes", surface == null ? 0L : surface.metrics().uploadedBytes());
+        info.put("framebufferWidth", surface == null ? 0 : surface.metrics().width());
+        info.put("framebufferHeight", surface == null ? 0 : surface.metrics().height());
+        info.put("estimatedPaintBytes", surface == null ? 0L : surface.metrics().estimatedPaintBytes());
         info.put("viewState", view == null ? "CLOSED" : view.state().lifecycle().name());
         info.put("sessionState", closed ? "CLOSED" : "ACTIVE");
         return Map.copyOf(info);
@@ -110,6 +128,10 @@ final class NeoForgeWebSession implements AutoCloseable {
 
     private double physical(double guiCoordinate) { return guiCoordinate * guiScale; }
     private static int physical(int size, double scale) { return Math.max(1, (int) Math.round(size * scale)); }
+    private static int requireDimension(int value, String name) {
+        if (value < 1) throw new IllegalArgumentException(name + " must be positive");
+        return value;
+    }
     private static double requireScale(double value) {
         if (!Double.isFinite(value) || value <= 0) throw new IllegalArgumentException("guiScale must be positive");
         return value;
@@ -120,7 +142,10 @@ final class NeoForgeWebSession implements AutoCloseable {
         closed = true;
         if (view != null) view.setVisible(false);
         if (surface != null) surface.close();
-        if (view != null) view.close();
+        if (view != null) {
+            demo.removeBridge(view.bridge());
+            view.close();
+        }
         runtime.close();
         backend.close();
     }

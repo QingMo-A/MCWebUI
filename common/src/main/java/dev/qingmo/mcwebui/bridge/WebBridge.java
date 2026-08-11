@@ -43,6 +43,22 @@ public final class WebBridge implements AutoCloseable {
         return new BridgeHandshake(1, "mcwebui", grantedCapabilities);
     }
 
+    /** Returns whether the browser session has negotiated a capability. Host publication does not use this gate. */
+    public boolean hasGrantedCapability(BridgeCapability capability) {
+        Objects.requireNonNull(capability, "capability");
+        return !closed && grantedCapabilities.contains(capability);
+    }
+
+    /** Enforces a capability for browser-origin protocol operations after handshake. */
+    public void requireBrowserCapability(BridgeCapability capability) {
+        ensureOpen();
+        Objects.requireNonNull(capability, "capability");
+        if (!grantedCapabilities.contains(capability)) {
+            throw new SecurityException("Bridge capability has not been negotiated: "
+                    + capability.name().toLowerCase());
+        }
+    }
+
     public BridgeResponse request(BridgeRequest request) {
         ensureOpen();
         if (grantedCapabilities.isEmpty()) {
@@ -55,6 +71,7 @@ public final class WebBridge implements AutoCloseable {
     public WebStateSubscription subscribeState(String channel, Consumer<BridgeStateUpdate> subscriber) {
         ensureOpen();
         permissions.require(origin, BridgeCapability.STATE);
+        requireBrowserCapability(BridgeCapability.STATE);
         Objects.requireNonNull(subscriber, "subscriber");
         Consumer<dev.qingmo.mcwebui.state.WebStateUpdate> adapter = update -> subscriber.accept(
                 new BridgeStateUpdate(update.channel(), update.value(), update.revision()));
@@ -99,6 +116,8 @@ public final class WebBridge implements AutoCloseable {
      */
     public void resetSession() {
         ensureOpen();
+        stateSubscriptions.forEach(WebStateSubscription::close);
+        stateSubscriptions.clear();
         grantedCapabilities = Set.of();
     }
 

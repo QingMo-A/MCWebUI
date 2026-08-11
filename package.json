@@ -11,7 +11,11 @@
     "typecheck": "npm run typecheck:web",
     "build:web": "npm run build --workspaces --if-present",
     "typecheck:web": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
     "dev:web": "npm --workspace @mcwebui/playground run dev --if-present"
+  },
+  "devDependencies": {
+    "vitest": "4.1.10"
   },
   "engines": {
     "node": ">=20.19.0 || >=22.12.0"

@@ -48,5 +48,9 @@ public final class NeoForgeDemoBridge {
         bridge.publishState("demo.counter", counter.get());
     }
 
+    public void removeBridge(WebBridge bridge) {
+        if (bridge != null) bridges.remove(bridge);
+    }
+
     public int counter() { return counter.get(); }
 }

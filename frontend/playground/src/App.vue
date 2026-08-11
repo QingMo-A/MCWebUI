@@ -37,7 +37,7 @@ const runtimeRows = computed(() => [
   ["Loader", diagnostics.value.loader ?? "—"],
   ["Minecraft", diagnostics.value.minecraftVersion ?? "—"],
   ["Browser", diagnostics.value.browserBackend ? `${diagnostics.value.browserBackend} ${diagnostics.value.browserVersion ?? ""}` : "—"],
-  ["Surface", diagnostics.value.surfacePhysicalWidth ? `${diagnostics.value.surfacePhysicalWidth} × ${diagnostics.value.surfacePhysicalHeight} px` : "—"],
+  ["Browser viewport", diagnostics.value.browserViewportWidth ? `${diagnostics.value.browserViewportWidth} × ${diagnostics.value.browserViewportHeight} px` : "—"],
   ["GUI scale", diagnostics.value.guiScale ?? "—"],
 ]);
 
@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
 
         <template v-else-if="activeTab === 'runtime'">
           <div class="section-heading page-heading"><div><p class="eyebrow">Target adapter telemetry</p><h2>Runtime diagnostics</h2><p class="muted">Sampled every 800 ms to keep the render loop quiet.</p></div><button class="button secondary" @click="refreshDiagnostics">Refresh now</button></div>
-          <article class="panel diagnostics-panel"><div class="diagnostics-grid"><div v-for="row in runtimeRows" :key="row[0]" class="diagnostic-cell"><span>{{ row[0] }}</span><strong>{{ row[1] }}</strong></div></div><div class="diagnostics-grid secondary-grid"><div class="diagnostic-cell"><span>Texture uploads</span><strong>{{ diagnostics.textureUploads ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Uploaded bytes</span><strong>{{ diagnostics.uploadedBytes ?? "—" }}</strong></div><div class="diagnostic-cell"><span>View state</span><strong>{{ diagnostics.viewState ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Session state</span><strong>{{ diagnostics.sessionState ?? "—" }}</strong></div></div></article>
+          <article class="panel diagnostics-panel"><div class="diagnostics-grid"><div v-for="row in runtimeRows" :key="row[0]" class="diagnostic-cell"><span>{{ row[0] }}</span><strong>{{ row[1] }}</strong></div></div><div class="diagnostics-grid secondary-grid"><div class="diagnostic-cell"><span>Paint callbacks</span><strong>{{ diagnostics.paintCallbacks ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Estimated paint bytes</span><strong>{{ diagnostics.estimatedPaintBytes ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Framebuffer</span><strong>{{ diagnostics.framebufferWidth ? `${diagnostics.framebufferWidth} × ${diagnostics.framebufferHeight} px` : "—" }}</strong></div><div class="diagnostic-cell"><span>View state</span><strong>{{ diagnostics.viewState ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Session state</span><strong>{{ diagnostics.sessionState ?? "—" }}</strong></div></div></article>
         </template>
 
         <template v-else>

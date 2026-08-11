@@ -7,11 +7,6 @@ import dev.qingmo.mcwebui.runtime.WebViewConfig;
 public interface BrowserBackend extends AutoCloseable {
     /** Create a browser surface bound to the view bridge. The bridge is the only host capability port. */
     BrowserSurface createSurface(WebViewConfig config, WebBridge bridge);
-
-    /** Backends may support a standalone surface, but transport-backed surfaces should require a bridge. */
-    default BrowserSurface createSurface(WebViewConfig config) {
-        return createSurface(config, null);
-    }
     @Override
     default void close() { }
 }
