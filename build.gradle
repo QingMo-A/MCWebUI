@@ -1,0 +1,55 @@
+plugins {
+    id 'base'
+}
+
+allprojects {
+    group = 'dev.qingmo.mcwebui'
+    version = '0.1.0-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+if (!gradle.ext.has('mcwebuiTargetManifest')) {
+    throw new GradleException('Validated MCWebUI target manifest is unavailable')
+}
+
+def targetManifest = gradle.ext.mcwebuiTargetManifest
+def targetEntries = targetManifest.targets
+
+def registerLifecycleAlias = { String name, String targetPath, String targetTask, String description ->
+    tasks.register(name) {
+        group = 'mcwebui'
+        this.description = description
+        dependsOn("${targetPath}:${targetTask}")
+    }
+}
+
+targetEntries.each { target ->
+    registerLifecycleAlias("compile${target.taskSuffix}", target.projectPath, 'compileJava', "Compile ${target.displayName}")
+    registerLifecycleAlias("test${target.taskSuffix}", target.projectPath, 'test', "Test ${target.displayName}")
+    registerLifecycleAlias("build${target.taskSuffix}", target.projectPath, 'build', "Build ${target.displayName}")
+}
+
+tasks.register('compileAllTargets') {
+    group = 'mcwebui'
+    description = 'Compile every registered Minecraft target.'
+    dependsOn(targetEntries.collect { "${it.projectPath}:compileJava" })
+}
+
+tasks.register('testAllTargets') {
+    group = 'mcwebui'
+    description = 'Test every registered Minecraft target.'
+    dependsOn(targetEntries.collect { "${it.projectPath}:test" })
+}
+
+tasks.register('buildAllTargets') {
+    group = 'mcwebui'
+    description = 'Build every registered Minecraft target.'
+    dependsOn(targetEntries.collect { "${it.projectPath}:build" })
+}
+
+tasks.named('build') {
+    dependsOn('buildAllTargets')
+}

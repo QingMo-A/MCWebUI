@@ -1,0 +1,40 @@
+# Gradle
+.gradle/
+**/build/
+!**/src/**/build/
+
+# Java / IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/
+
+# Minecraft development runtime
+run/
+runs/
+logs/
+crash-reports/
+
+# Node / frontend
+node_modules/
+**/dist/
+**/.vite/
+.npm/
+*.tsbuildinfo
+
+# Native/browser runtime caches
+.mcef/
+mcef/
+cef-cache/
+web-cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment
+.env
+.env.*
+!.env.example

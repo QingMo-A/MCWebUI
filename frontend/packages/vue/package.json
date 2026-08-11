@@ -1,0 +1,10 @@
+{
+  "name": "@mcwebui/vue",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "Vue bindings for MCWebUI",
+  "peerDependencies": {
+    "vue": ">=3"
+  }
+}

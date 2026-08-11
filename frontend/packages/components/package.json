@@ -1,0 +1,7 @@
+{
+  "name": "@mcwebui/components",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "MC-oriented web UI components built on MCWebUI"
+}

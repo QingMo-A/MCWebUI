@@ -1,0 +1,7 @@
+{
+  "name": "@mcwebui/playground",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "MCWebUI development and dogfood frontend"
+}

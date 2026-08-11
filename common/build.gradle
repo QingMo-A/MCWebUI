@@ -1,0 +1,11 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+// Common must remain loader- and Minecraft-API independent.

@@ -1,0 +1,72 @@
+import groovy.json.JsonSlurper
+
+rootProject.name = 'MCWebUI'
+include('common')
+
+File manifestFile = file('gradle/mcwebui-targets.json')
+if (!manifestFile.isFile()) {
+    throw new GradleException('Missing gradle/mcwebui-targets.json')
+}
+
+def raw = new JsonSlurper().parse(manifestFile)
+if (raw.schemaVersion != 1) {
+    throw new GradleException("Unsupported MCWebUI target manifest schema: ${raw.schemaVersion}")
+}
+if (!(raw.defaultTarget instanceof String) || raw.defaultTarget.isBlank()) {
+    throw new GradleException('MCWebUI target manifest requires defaultTarget')
+}
+if (!(raw.targets instanceof List) || raw.targets.isEmpty()) {
+    throw new GradleException('MCWebUI target manifest requires at least one target')
+}
+
+def seenIds = new HashSet<String>()
+def seenPaths = new HashSet<String>()
+def seenSuffixes = new HashSet<String>()
+def normalizedTargets = raw.targets.collect { entry ->
+    String id = entry.id as String
+    String projectPath = entry.projectPath as String
+    String taskSuffix = entry.taskSuffix as String
+    String displayName = entry.displayName as String
+    String loader = entry.loader as String
+    String minecraftVersion = entry.minecraftVersion as String
+    int javaVersion = (entry.javaVersion as Number).intValue()
+
+    if (!id || !projectPath || !taskSuffix || !displayName || !loader || !minecraftVersion || javaVersion <= 0) {
+        throw new GradleException("Invalid MCWebUI target manifest entry: ${entry}")
+    }
+    if (!seenIds.add(id) || !seenPaths.add(projectPath) || !seenSuffixes.add(taskSuffix)) {
+        throw new GradleException("Duplicate target id/projectPath/taskSuffix in MCWebUI manifest: ${id}")
+    }
+    if (!projectPath.startsWith(':targets:')) {
+        throw new GradleException("Target projectPath must live below :targets:: ${projectPath}")
+    }
+
+    File projectDir = file(projectPath.substring(1).replace(':', '/'))
+    if (!projectDir.isDirectory() || !new File(projectDir, 'build.gradle').isFile()) {
+        throw new GradleException("Target project is incomplete: ${projectPath}")
+    }
+
+    [
+        id: id,
+        projectPath: projectPath,
+        taskSuffix: taskSuffix,
+        displayName: displayName,
+        loader: loader,
+        minecraftVersion: minecraftVersion,
+        javaVersion: javaVersion
+    ]
+}
+
+if (!normalizedTargets.any { it.id == raw.defaultTarget }) {
+    throw new GradleException("defaultTarget is not registered: ${raw.defaultTarget}")
+}
+
+gradle.ext.mcwebuiTargetManifest = [
+    schemaVersion: 1,
+    defaultTarget: raw.defaultTarget as String,
+    targets: normalizedTargets.collect { Collections.unmodifiableMap(new LinkedHashMap<>(it)) }
+]
+
+gradle.ext.mcwebuiTargetManifest = Collections.unmodifiableMap(new LinkedHashMap<>(gradle.ext.mcwebuiTargetManifest))
+
+normalizedTargets.each { include(it.projectPath) }
