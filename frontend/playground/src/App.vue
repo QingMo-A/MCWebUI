@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { McBridgeError } from "@mcwebui/core";
 import { useMcRpc, useMcState } from "@mcwebui/vue";
 
@@ -26,7 +26,6 @@ const scrollItems = Array.from({ length: 14 }, (_, index) => ({
   title: `Runtime signal ${String(index + 1).padStart(2, "0")}`,
   detail: index % 2 ? "state channel is idle" : "paint observer is ready",
 }));
-let diagnosticsTimer: number | undefined;
 let toastTimer: number | undefined;
 
 const statusLabel = computed(() => ({ disconnected: "Disconnected", connecting: "Connecting", connected: "Connected", error: "Error" }[connectionState.value]));
@@ -38,6 +37,7 @@ const runtimeRows = computed(() => [
   ["Minecraft", diagnostics.value.minecraftVersion ?? "—"],
   ["Browser", diagnostics.value.browserBackend ? `${diagnostics.value.browserBackend} ${diagnostics.value.browserVersion ?? ""}` : "—"],
   ["Browser viewport", diagnostics.value.browserViewportWidth ? `${diagnostics.value.browserViewportWidth} × ${diagnostics.value.browserViewportHeight} px` : "—"],
+  ["Viewport mode", diagnostics.value.viewportMode ?? "—"],
   ["GUI scale", diagnostics.value.guiScale ?? "—"],
 ]);
 
@@ -73,13 +73,19 @@ function notify(messageText: string) {
   if (toastTimer) window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => { toast.value = ""; }, 2600);
 }
-onMounted(() => {
-  void client.connect().catch(() => undefined);
-  void refreshDiagnostics();
-  diagnosticsTimer = window.setInterval(() => void refreshDiagnostics(), 800);
+watch(activeTab, (tab) => {
+  if (tab === "runtime") void refreshDiagnostics();
+});
+onMounted(async () => {
+  try {
+    await client.connect();
+    // Diagnostics are intentionally sampled on connect, when the Runtime tab is opened, or
+    // by the explicit refresh controls.  A timer here would mutate the DOM continuously and
+    // make an otherwise idle CEF surface generate paint callbacks forever.
+    await refreshDiagnostics();
+  } catch { /* connectionState/connectionError expose the failure to the UI */ }
 });
 onBeforeUnmount(() => {
-  if (diagnosticsTimer) window.clearInterval(diagnosticsTimer);
   if (toastTimer) window.clearTimeout(toastTimer);
 });
 </script>

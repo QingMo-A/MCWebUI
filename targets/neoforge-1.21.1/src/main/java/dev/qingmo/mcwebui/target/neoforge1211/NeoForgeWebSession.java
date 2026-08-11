@@ -31,6 +31,9 @@ final class NeoForgeWebSession implements AutoCloseable {
     private double guiScale = 1.0;
     private int minecraftGuiWidth;
     private int minecraftGuiHeight;
+    private int browserViewportWidth;
+    private int browserViewportHeight;
+    private boolean followGuiSize = true;
     private boolean initialized;
     private volatile boolean closed;
 
@@ -52,8 +55,16 @@ final class NeoForgeWebSession implements AutoCloseable {
         this.guiScale = requireScale(guiScale);
         this.minecraftGuiWidth = requireDimension(guiWidth, "guiWidth");
         this.minecraftGuiHeight = requireDimension(guiHeight, "guiHeight");
-        int width = physical(guiWidth, guiScale);
-        int height = physical(guiHeight, guiScale);
+        this.followGuiSize = NeoForgeMod.CLIENT_CONFIG.followGuiSize();
+        // Screen coordinates are GUI-scaled already.  Keep the browser viewport in that same
+        // coordinate space instead of multiplying it by the OS framebuffer scale: Minecraft's
+        // pose/projection scales the quad when it is composited, while CEF receives the exact
+        // coordinates produced by Screen mouse events.  This also avoids allocating a second,
+        // needlessly large RGBA surface on high GUI scales.
+        int width = browserDimension(guiWidth, this.guiScale);
+        int height = browserDimension(guiHeight, this.guiScale);
+        this.browserViewportWidth = width;
+        this.browserViewportHeight = height;
         try {
             view = runtime.createView(new WebViewConfig(WebOrigin.mcui(PLAYGROUND_HOST), "/index.html", width, height));
             view.initialize();
@@ -76,18 +87,22 @@ final class NeoForgeWebSession implements AutoCloseable {
         this.guiScale = requireScale(guiScale);
         this.minecraftGuiWidth = requireDimension(guiWidth, "guiWidth");
         this.minecraftGuiHeight = requireDimension(guiHeight, "guiHeight");
-        int width = physical(guiWidth, guiScale);
-        int height = physical(guiHeight, guiScale);
+        if (!followGuiSize) return;
+        int width = browserDimension(guiWidth, this.guiScale);
+        int height = browserDimension(guiHeight, this.guiScale);
+        if (width == browserViewportWidth && height == browserViewportHeight) return;
+        this.browserViewportWidth = width;
+        this.browserViewportHeight = height;
         view.resize(width, height);
         surface.resize(width, height);
     }
 
-    void mouseMove(double x, double y) { input(new WebMouseEvent(WebMouseEvent.Type.MOVE, physical(x), physical(y), -1)); }
+    void mouseMove(double x, double y) { input(new WebMouseEvent(WebMouseEvent.Type.MOVE, browserX(x), browserY(y), -1)); }
     void mouseButton(double x, double y, int button, boolean down) {
-        input(new WebMouseEvent(down ? WebMouseEvent.Type.DOWN : WebMouseEvent.Type.UP, physical(x), physical(y), button));
+        input(new WebMouseEvent(down ? WebMouseEvent.Type.DOWN : WebMouseEvent.Type.UP, browserX(x), browserY(y), button));
     }
     void mouseScroll(double x, double y, double deltaX, double deltaY) {
-        input(new WebScrollEvent(physical(x), physical(y), deltaX, deltaY));
+        input(new WebScrollEvent(browserX(x), browserY(y), deltaX, deltaY));
     }
     void key(int keyCode, int scanCode, int modifiers, boolean down) {
         input(new WebKeyEvent(down ? WebKeyEvent.Type.DOWN : WebKeyEvent.Type.UP, keyCode, scanCode, modifiers));
@@ -117,6 +132,8 @@ final class NeoForgeWebSession implements AutoCloseable {
         info.put("minecraftGuiHeight", minecraftGuiHeight);
         info.put("browserViewportWidth", surface == null ? 0 : surface.width());
         info.put("browserViewportHeight", surface == null ? 0 : surface.height());
+        info.put("followGuiSize", followGuiSize);
+        info.put("viewportMode", followGuiSize ? "GUI" : "LOCKED");
         info.put("guiScale", guiScale);
         info.put("paintCallbacks", surface == null ? 0L : surface.metrics().paintCallbacks());
         info.put("framebufferWidth", surface == null ? 0 : surface.metrics().width());
@@ -127,8 +144,17 @@ final class NeoForgeWebSession implements AutoCloseable {
         return Map.copyOf(info);
     }
 
-    private double physical(double guiCoordinate) { return guiCoordinate * guiScale; }
-    private static int physical(int size, double scale) { return Math.max(1, (int) Math.round(size * scale)); }
+    private double browserX(double guiCoordinate) { return mapCoordinate(guiCoordinate, minecraftGuiWidth, browserViewportWidth); }
+    private double browserY(double guiCoordinate) { return mapCoordinate(guiCoordinate, minecraftGuiHeight, browserViewportHeight); }
+
+    // Keep these conversions package-visible so the coordinate-space contract can be tested
+    // without constructing a live CEF/Minecraft session. The scale is validated by init/resize;
+    // it is passed here only to make the intentionally identity conversion explicit at callsites.
+    static int browserDimension(int guiSize, double guiScale) { return Math.max(1, guiSize); }
+    static double mapCoordinate(double guiCoordinate, int guiSize, int browserSize) {
+        if (guiSize < 1 || browserSize < 1) throw new IllegalArgumentException("coordinate spaces must be positive");
+        return guiCoordinate * browserSize / (double) guiSize;
+    }
     private static int requireDimension(int value, String name) {
         if (value < 1) throw new IllegalArgumentException(name + " must be positive");
         return value;

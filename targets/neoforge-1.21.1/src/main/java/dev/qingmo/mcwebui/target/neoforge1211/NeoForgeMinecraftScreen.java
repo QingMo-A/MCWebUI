@@ -41,8 +41,9 @@ public final class NeoForgeMinecraftScreen extends Screen {
         // binding it would draw the default texture and make the screen look permanently blank.
         if (textureId <= 0) return;
         RenderSystem.disableDepthTest();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+        // MCEF's surface is created opaque; leave the same post-draw state as the previous
+        // transparent path while avoiding a blend pass for the full-screen browser quad.
+        RenderSystem.disableBlend();
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, textureId);
         Tesselator tesselator = Tesselator.getInstance();
@@ -53,7 +54,6 @@ public final class NeoForgeMinecraftScreen extends Screen {
         buffer.addVertex(pose, width, height, 0).setUv(1, 1);
         buffer.addVertex(pose, width, 0, 0).setUv(1, 0);
         BufferUploader.drawWithShader(buffer.buildOrThrow());
-        RenderSystem.disableBlend();
         RenderSystem.enableDepthTest();
     }
 

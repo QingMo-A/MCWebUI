@@ -92,7 +92,10 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
             this.width = config.width();
             this.height = config.height();
             this.host = new BridgeHost(bridge);
-            this.browser = new InstrumentedMcefBrowser(url, true, metrics);
+            // The browser surface is composited as a full-screen opaque quad. Avoiding the
+            // transparent OSR compositing path skips unnecessary alpha blending work for every
+            // paint/upload; page overlays are already composited inside CEF.
+            this.browser = new InstrumentedMcefBrowser(url, false, metrics);
             SURFACES.put(browser, this);
             this.browser.resize(width, height);
         }
