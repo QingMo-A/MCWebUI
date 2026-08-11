@@ -18,6 +18,37 @@ if (!gradle.ext.has('mcwebuiTargetManifest')) {
 def targetManifest = gradle.ext.mcwebuiTargetManifest
 def targetEntries = targetManifest.targets
 
+def npmExecutable = org.gradle.internal.os.OperatingSystem.current().isWindows() ? 'npm.cmd' : 'npm'
+def frontendDirectory = rootProject.projectDir
+def frontendLock = file('package-lock.json')
+
+tasks.register('frontendInstall', Exec) {
+    group = 'mcwebui'
+    description = 'Install the locked frontend workspace dependencies.'
+    workingDir frontendDirectory
+    commandLine npmExecutable, 'ci'
+    inputs.file(frontendLock)
+    outputs.dir(new File(frontendDirectory, 'node_modules'))
+}
+
+tasks.register('frontendTypecheck', Exec) {
+    group = 'mcwebui'
+    description = 'Typecheck all MCWebUI frontend workspaces.'
+    dependsOn('frontendInstall')
+    workingDir frontendDirectory
+    commandLine npmExecutable, 'run', 'typecheck:web'
+}
+
+tasks.register('frontendBuild', Exec) {
+    group = 'mcwebui'
+    description = 'Build the shared Vue frontend bundle.'
+    dependsOn('frontendInstall')
+    workingDir frontendDirectory
+    commandLine npmExecutable, 'run', 'build:web'
+    inputs.dir(file('frontend'))
+    outputs.dir(file('frontend/playground/dist'))
+}
+
 def registerLifecycleAlias = { String name, String targetPath, String targetTask, String description ->
     tasks.register(name) {
         group = 'mcwebui'
@@ -49,6 +80,34 @@ tasks.register('buildAllTargets') {
     description = 'Build every registered Minecraft target.'
     dependsOn(targetEntries.collect { "${it.projectPath}:build" })
 }
+
+tasks.register('runClient') {
+    group = 'mcwebui'
+    description = "Run the default target (${targetManifest.defaultTarget}) client when its adapter exposes a run task."
+    def defaultEntry = targetEntries.find { it.id == targetManifest.defaultTarget }
+    if (defaultEntry != null) {
+        def candidate = "${defaultEntry.projectPath}:runClient"
+        dependsOn(candidate)
+    }
+}
+
+tasks.register('architectureCheck') {
+    group = 'verification'
+    description = 'Check common contracts remain independent from loader and browser implementation APIs.'
+    doLast {
+        def forbidden = ~/import\s+(net\.minecraft|net\.minecraftforge|net\.neoforged|org\.cef|org\.cef\.browser|net\.montoyo\.mcef|com\.github\.CCBlueX\.mcef)/
+        fileTree('common/src/main/java').matching { include '**/*.java' }.files.each { source ->
+            if (forbidden.matcher(source.getText('UTF-8')).find()) {
+                throw new GradleException("Forbidden target/browser import in common: ${source}")
+            }
+        }
+        ['frontend/forge', 'frontend/neoforge', 'frontend/forge-playground', 'frontend/neoforge-playground'].each { duplicate ->
+            if (file(duplicate).exists()) throw new GradleException("Target-specific frontend bundle found: ${duplicate}")
+        }
+    }
+}
+
+tasks.named('check') { dependsOn('architectureCheck') }
 
 tasks.named('build') {
     dependsOn('buildAllTargets')

@@ -3,5 +3,11 @@
   "version": "0.1.0-dev",
   "private": true,
   "type": "module",
-  "description": "Framework-independent browser bridge client for MCWebUI"
+  "types": "src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "import": "./src/index.ts" } },
+  "description": "Framework-independent browser bridge client for MCWebUI",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json"
+  }
 }

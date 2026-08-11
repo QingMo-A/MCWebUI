@@ -8,4 +8,21 @@ java {
     }
 }
 
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
 // Common must remain loader- and Minecraft-API independent.

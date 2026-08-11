@@ -3,5 +3,20 @@
   "version": "0.1.0-dev",
   "private": true,
   "type": "module",
-  "description": "MCWebUI development and dogfood frontend"
+  "description": "MCWebUI development and dogfood frontend",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@mcwebui/core": "0.1.0-dev",
+    "@mcwebui/vue": "0.1.0-dev",
+    "vue": "3.5.41"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "typescript": "7.0.2",
+    "vite": "8.2.1"
+  }
 }

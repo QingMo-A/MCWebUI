@@ -12,4 +12,20 @@ dependencies {
     implementation project(':common')
 }
 
-// NeoGradle/Minecraft/MCEF integration is intentionally added in Phase 1.
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+tasks.named('jar') {
+    dependsOn(project(':common').tasks.named('jar'))
+    dependsOn(rootProject.tasks.named('frontendBuild'))
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from({ zipTree(project(':common').tasks.named('jar').get().archiveFile.get().asFile) })
+    from(rootProject.file('frontend/playground/dist')) {
+        into('web/playground')
+    }
+}
+
+// The MCEF candidate is documented in plans/phase-1-browser-runtime-plan.md. It is not declared
+// as a fake dependency: no maintained artifact currently verifies NeoForge 1.21.1 compatibility.

@@ -12,4 +12,9 @@ dependencies {
     implementation project(':common')
 }
 
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
 // ForgeGradle/Minecraft/MCEF integration is intentionally added in Phase 1.

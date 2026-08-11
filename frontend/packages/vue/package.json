@@ -3,8 +3,17 @@
   "version": "0.1.0-dev",
   "private": true,
   "type": "module",
+  "types": "src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "import": "./src/index.ts" } },
   "description": "Vue bindings for MCWebUI",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json"
+  },
   "peerDependencies": {
-    "vue": ">=3"
+    "vue": "^3.5.41"
+  },
+  "dependencies": {
+    "@mcwebui/core": "0.1.0-dev"
   }
 }
