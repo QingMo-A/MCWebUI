@@ -329,6 +329,14 @@ Target behavior:
 
 `FramePolicy.ADAPTIVE` is the preferred public direction.
 
+The current NeoForge/MCEF implementation does not yet provide a supported game-synchronized
+frame clock. Native CEF documents `SetWindowlessFrameRate` and
+`SendExternalBeginFrame`, but the bundled CinemaMod JCEF/MCEF Java and JNI surface does not
+expose either operation or the required browser-creation flags. See
+[`plans/frame-pacing-plan.md`](frame-pacing-plan.md) for the verified A/B/C/D gate and the
+conditions for reopening implementation work; do not infer an FPS improvement from the
+Minecraft render loop alone.
+
 ### 11.3 Dirty-region upload
 
 Do not design around uploading an entire high-resolution browser framebuffer every Minecraft frame.

@@ -47,6 +47,8 @@ Implemented locally:
 
 Known limitation: the local in-game pass verified F8 screen open, bundled HTML/JS/CSS, native paint output, a connected handshake, Java-pushed initial state, `demo.ping`, populated runtime diagnostics, and both generated client-config values starting cleanly. Mouse/wheel/keyboard editing, clipboard, repeated close/reopen, and Chinese IME are not yet fully accepted. CEF windowless rendering defaults to a maximum of 30 paint callbacks per second; the MCEF/JCEF 2.1.6 Java API bundled for 1.21.1 does not expose the native frame-rate setter, so scrolling can still look less fluid than Minecraft even when the game frame rate is high. Chinese composition is represented in the common input model, but full GLFW IME composition remains a documented target limitation. MCEF 2.1.6 also emits a non-fatal `GLFW 65539` cursor warning; it did not prevent rendering or bridge operation. The MCEF native downloader remains owned by the MCEF mod; this repository does not vendor native binaries.
 
+The GAME_SYNC/frame-pacing feasibility audit is recorded in [`plans/frame-pacing-plan.md`](plans/frame-pacing-plan.md). Native CEF has rate and external-begin-frame concepts, but the bundled CinemaMod JCEF/MCEF Java and JNI path does not expose them; no game-tick repaint loop, reflection, private JNI call, binary patch, or FPS claim is made. A future supported wrapper must be benchmarked with real paint cadence, game frame time, CPU, and upload measurements before changing defaults.
+
 ## Requirements
 
 - JDK 17 for `common` and the preserved Forge target; JDK 21 for the NeoForge target.

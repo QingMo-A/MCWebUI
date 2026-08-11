@@ -40,10 +40,56 @@ binary patch.
 | C — GAME_SYNC safety | Can Minecraft's render/tick loop safely drive CEF paints? | `NeoForgeMinecraftScreen.render` draws MCEF's texture every game render. `InstrumentedMcefBrowser.onPaint` calls MCEF's implementation first; MCEF performs native texture/dirty-rect work. The bundled java-cef source at the audited `a78e832` revision has no `SendExternalBeginFrame`, `external_begin_frame_enabled`, `SetWindowlessFrameRate`, or `windowless_frame_rate` Java/JNI path; `CefBrowser_N` creation only constructs the native defaults. Retaining the callback `ByteBuffer` would violate its callback ownership and duplicate MCEF's cache. | **FAIL.** CEF has the native concepts, but this JCEF/MCEF Java + JNI + creation path does not expose them. Do not add a Java repaint loop or callback cache. |
 | D — measurable acceptance | Can a 60-FPS or GAME_SYNC improvement be demonstrated here? | `FrameMetrics` records paint callback count and an explicitly estimated full-frame byte total, not game frame time, actual GPU upload bytes, or browser FPS. The existing runClient result is startup/bridge smoke only; no manual FPS data is fabricated. | **DEFERRED/NO-GO.** A future benchmark must capture paired before/after data on the same client profile. |
 
+## Selected result: RESULT C — source-level JCEF JNI patch required
+
+The missing integration is small enough to describe precisely, but it cannot be shipped as
+an MCWebUI-only Java change. The external-begin-frame flag is immutable browser-creation
+state, and the later frame signal crosses JNI. A reliable implementation therefore requires
+a matched Java/JNI/native release and real platform builds. This checkpoint stops at a
+verified implementation plan because those artifacts were not built and runtime-tested.
+
+The minimum source patch surface is:
+
+1. CinemaMod java-cef `java/org/cef/browser/CefBrowser.java`: expose an external begin-frame
+   operation (and, if the fixed fallback is retained, get/set windowless frame-rate methods).
+2. `java/org/cef/browser/CefBrowser_N.java`: forward the public operation to a new native
+   declaration and carry an `externalBeginFrameEnabled` creation option. The option must be
+   known before `N_CreateBrowser`; enabling it after creation is not supported by CEF.
+3. `java/org/cef/browser/CefBrowserOsr.java` plus the browser factory/client creation path:
+   preserve the option from OSR construction through `createBrowser` without changing the
+   default for unrelated MCEF users.
+4. Generated `native/CefBrowser_N.h` and `native/CefBrowser_N.cpp`: set
+   `windowInfo.external_begin_frame_enabled` before `CefBrowserHost::CreateBrowser`, and add
+   the JNI method that obtains the browser host and calls `SendExternalBeginFrame()` on the
+   supported thread. A fixed fallback would separately bind
+   `GetWindowlessFrameRate`/`SetWindowlessFrameRate`; it remains capped by CEF at 60 and is
+   approximate synchronization, not GAME_SYNC.
+5. CinemaMod MCEF `MCEFBrowser`/`MCEF.createBrowser`: add an opt-in creation overload or
+   settings object and a public frame-signal method. Existing overloads must keep backend
+   defaults so other mods do not create externally paced browsers that receive no signals.
+6. MCWebUI can then add a backend-neutral optional capability. The active Screen's real
+   `render` call may signal it at most once per visible render frame; close/hidden surfaces
+   stop signaling. Unsupported backends degrade to `BACKEND_DEFAULT` without failing startup.
+
+Build and distribution are the dominant maintenance cost. CinemaMod's MCEF downloader binds
+Java classes to native archives by the java-cef commit and mirror. A patched release must
+build and test matching JCEF archives for all six declared targets (`linux_amd64`,
+`linux_arm64`, `windows_amd64`, `windows_arm64`, `macos_amd64`, `macos_arm64`), publish each
+archive and checksum from a controlled mirror, and ship MCEF metadata/API that selects the
+same revision. Mixing the patched Java classes with the current `jcef.dll` is invalid. A
+Windows-only proof would not justify publishing GAME_SYNC as a portable MCWebUI capability.
+
+Licensing also travels with that distribution: CEF/java-cef use the BSD-style CEF license and
+require retained copyright/license notices for source and binary redistribution; MCEF is
+LGPL-2.1-or-later and a modified distributed build requires the applicable notices and
+corresponding modified library source. No patched artifact is produced by this checkpoint.
+
 ## Bundled artifact audit
 
 The checked local artifacts were:
 
+* `com.cinemamod:mcef-neoforge:2.1.6-1.21.1`, SHA-256
+  `5ED9889A65AC2673B1FD0BF92EC6B39EE933A1FCBA23202AD5E065E1B012C804`.
 * `com.cinemamod:mcef:2.1.6-1.21.1`, SHA-256
   `C6EB3842D1F5EE80A5133EA22EE380706E0B1BB2E7028B841C074A92CA33FF96`.
 * `build/mcef-libraries/windows_amd64/jcef.dll`, SHA-256
@@ -115,9 +161,14 @@ introduced without measurement.
 
 * [CEF `CefBrowserHost::SetWindowlessFrameRate`](https://cef-builds.spotifycdn.com/docs/115.2/classCefBrowserHost.html)
   (native OSR limit, default 30, maximum 60, and creation-setting reference).
-* [CEF `cef_browser_settings_t.windowless_frame_rate`](https://cef-builds.spotifycdn.com/docs/145.0/structcef__browser__settings__t.html)
-  (creation-time browser setting).
-* [CEF browser header](https://github.com/chromiumembedded/cef/blob/master/include/cef_browser.h)
-  (native `GetWindowlessFrameRate`/`SetWindowlessFrameRate` contract).
+* [CEF 5845 browser header](https://github.com/chromiumembedded/cef/blob/5845/include/cef_browser.h)
+  (the Chromium 116 line used here; native `SendExternalBeginFrame` and
+  `GetWindowlessFrameRate`/`SetWindowlessFrameRate` contracts).
+* [CEF 5845 browser settings](https://github.com/chromiumembedded/cef/blob/5845/include/internal/cef_types.h)
+  (creation-time `windowless_frame_rate`, default 30 and maximum 60).
+* [JCEF browser implementation](https://github.com/chromiumembedded/java-cef/tree/master/java/org/cef/browser)
+  (current upstream comparison only; it is not substituted for the bundled revision).
+* [CinemaMod java-cef `a78e832`](https://github.com/CinemaMod/java-cef/tree/a78e832f9f13c2c688caea3d04d8b84fcd238d94)
+  (the exact Java/JNI source revision bundled by MCEF and audited above).
 * [CinemaMod MCEF 2.1.6-1.21.1](https://github.com/CinemaMod/mcef/tree/2.1.6-1.21.1)
   (the maintained MCEF/JCEF distribution used by this target).

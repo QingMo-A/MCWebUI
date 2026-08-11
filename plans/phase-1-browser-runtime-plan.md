@@ -44,6 +44,19 @@ NeoForge now registers `config/mcwebui-client.toml` with `followGuiSize=true` by
 
 The playground no longer uses a native HTML `select` for the choice sample. CEF OSR could leave that platform popup visible after selection, so the sample now uses an in-page Vue listbox with selection, outside-pointer close, focus restoration, and ARIA behavior. This keeps popup pixels inside the normal browser paint lifecycle.
 
+### GAME_SYNC / frame-pacing feasibility checkpoint (2026-08-11)
+
+The requested native frame-pacing path is **VERIFIED PLAN / NO-GO for implementation** at
+this dependency line. CEF itself documents `CefBrowserHost::SetWindowlessFrameRate` and
+`SendExternalBeginFrame`, but CinemaMod MCEF/JCEF `2.1.6-1.21.1` exposes neither through
+its Java/JNI classes or browser-creation settings. The NeoForge Screen therefore keeps
+compositing MCEF's persistent texture each Minecraft render while CEF owns `onPaint`
+scheduling. No Java tick-driven invalidation, callback-buffer retention, reflection,
+private JNI, native binary patch, or generic Chromium switch is safe to add here. The
+bundled `FrameMetrics` counters do not constitute an FPS benchmark. Gate evidence,
+artifact hashes, and the future supported-wrapper implementation steps are in
+[`plans/frame-pacing-plan.md`](frame-pacing-plan.md).
+
 ## 2. Scope freeze
 
 ### Required
@@ -371,7 +384,7 @@ Avoid committed generated `dist/` output unless a later distribution requirement
 
 Checkpoint result: `npm ci`, `npm run typecheck`, and `npm run build` pass locally with Node 22.22.2. Root Gradle tasks `frontendInstall`, `frontendTypecheck`, and `frontendBuild` reuse the root lockfile and stage the shared `frontend/playground/dist` output into the NeoForge JAR. Generated output is ignored.
 
-NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `27F7697E29BC236AEA39048519B02E882EB22D24EA0E57D3744F732FBB995213`. The packaged `index.html` (`E1AF7A73BF7C9DB9787DDFC5198E26B435141344495EFF21500332DF8092277C`), JS (`3BFC7D153B706DA341E317771A2F5B8C293959D2E17566B57F33B65D9A7FA00A`), and CSS (`293DD0EDB94B0F8BC74250279F60C6D86E9176A5A3AC1337E4F2C76DE6E798AE`) hashes match the single `frontend/playground/dist` source. The JAR has 85 entries, contains common runtime classes exactly once and three web files, and has no duplicate entries, Forge adapter, frontend source, source map, or node_modules content.
+NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `B692C2D54F44B590E79A12C54BDCEAD40D4C7C4B18635D5D6AE80F2E3BF50A52`. The packaged `index.html` (`7890228CD0F51C81390167BB16183F89759314514431280348C2316CE30BCE46`), JS (`83E40D28A8ECA5AD06E75AFB61F766931470A366B4A77868B1A0FABFC63EE0ED`), and CSS (`293DD0EDB94B0F8BC74250279F60C6D86E9176A5A3AC1337E4F2C76DE6E798AE`) hashes match the single `frontend/playground/dist` source. The JAR has 85 entries, contains common runtime classes exactly once and three web files, and has no duplicate entries, Forge adapter, frontend source, source map, or node_modules content.
 
 The long-term parity goal remains a shared logical playground bundle, but this user-directed checkpoint audits and accepts only the NeoForge 1.21.1 JAR; Forge 1.20.1 parity is deferred while its existing structure is preserved.
 
