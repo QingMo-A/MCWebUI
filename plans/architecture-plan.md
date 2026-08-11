@@ -337,7 +337,7 @@ The browser paint path should preserve dirty rectangles where the backend expose
 
 The NeoForge MCEF adapter keeps MCEF's persistent texture and dirty-region uploads as the authoritative cache. CEF callback buffers are not retained beyond `onPaint`. The visible Minecraft Screen still composites that cached texture every game frame because the world framebuffer is rebuilt every frame, but an unchanged page should not create new browser paints or texture uploads. Demo telemetry must therefore be sampled on demand rather than mutating the DOM on an idle timer.
 
-Browser viewport coordinates are Minecraft GUI coordinates, not framebuffer pixels multiplied by `guiScale`. A client preference may either follow GUI resize events or lock the viewport created when the Screen opens. In locked mode the quad still fills the current Screen and input is mapped independently on each axis into the fixed browser coordinate space.
+Browser viewport coordinates default to Minecraft GUI coordinates, not framebuffer pixels multiplied by `guiScale`. A client preference may either follow GUI dimensions or use framebuffer-equivalent dimensions (`round(guiSize * guiScale)`) as the window changes. In either mode the quad still fills the current Screen and input is mapped independently on each axis into the browser coordinate space.
 
 Pipeline target:
 
