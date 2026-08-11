@@ -107,28 +107,31 @@ Checkpoint date: **2026-08-11**
 
 Historical branch HEAD before this handoff file was added: `2a6fb16f5586e2809c3313d943b01fee8402c3dd` (`clarify neoforge scope checkpoint`). Always re-fetch current `bridge` before acting.
 
-Phase 1 status in the plan: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only scope)**.
+Phase 1 status in the plan: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only bridge/showcase scope)**.
 
 What currently exists:
 
 - loader/browser-neutral common runtime contracts;
-- common bridge codec/dispatcher/state/security/resource/input semantics;
+- common bridge codec/dispatcher/state/security/resource/input semantics, including explicit subscribe/unsubscribe operations;
 - `@mcwebui/core` TypeScript client;
 - `@mcwebui/vue` bindings;
 - one shared Vue/Vite playground source;
 - `mcui://` JAR resource loading for NeoForge;
-- CinemaMod MCEF backend for NeoForge 1.21.1;
-- a real NeoForge Minecraft Screen rendering the MCEF texture;
+- CinemaMod MCEF backend for NeoForge 1.21.1 with official JCEF `CefMessageRouter`/`CefQuery` JS-to-Java transport;
+- a single NeoForge Minecraft Screen -> `NeoForgeWebSession` path rendering the target-local MCEF texture;
+- a responsive shared showcase with bridge lab, runtime diagnostics, controls, overlays, scroll area, and input lab;
 - manifest still retains both NeoForge 1.21.1 and Forge 1.20.1;
 - Forge implementation/runtime parity is intentionally deferred, not removed.
+
+Implementation checkpoint: `4ad22a1` (`wire neoforge browser bridge and showcase`). Documentation checkpoint is recorded in the following commit (`see git history`).
 
 Important review findings at this checkpoint:
 
 1. **NeoForge-only implementation is still within the intended bridge model**, because common/frontend semantics remain shared and the Forge target/manifest entry remains preserved. Do not treat “one target implemented first” as a failure by itself.
-2. There are currently parallel NeoForge screen/runtime paths (`NeoForgeMinecraftScreen`, `NeoForgeWebScreen`, `NeoForgeRuntimeAdapter`). The active F8 path opens `NeoForgeMinecraftScreen`, so the next implementation should converge this into one clear adapter/composition path to avoid drift.
+2. NeoForge screen/runtime paths are converged: F8 opens `NeoForgeMinecraftScreen`, which delegates lifecycle/input/rendering to one `NeoForgeWebSession`; the former duplicate `NeoForgeWebScreen`/`NeoForgeRuntimeAdapter`/frame uploader paths were removed.
 3. `targets/neoforge-1.21.1/build.gradle` currently adds common Java sources directly to its main source set and also merges the common JAR. Investigate whether ModDevGradle supports a cleaner project/shared-source arrangement, but do not break a working dev runtime merely for aesthetic purity.
-4. The frontend core expects a host-installed `window.__MCWEBUI_BRIDGE__` transport. At this checkpoint the inspected NeoForge scheme/backend/screen code clearly provides JAR resources and MCEF rendering, but no verified host transport installation was found. Treat **real browser JS ↔ common Java transport** as an unverified/likely missing Phase 1 link until remote code proves otherwise.
-5. Interactive mouse/keyboard/clipboard/Chinese IME acceptance is explicitly not yet manually runtime verified in the phase plan.
+4. The browser host transport is now real: a load hook installs `window.__MCWEBUI_BRIDGE__` only for the configured trusted `mcui://` origin; its `send()` uses JCEF `CefQuery` JSON envelopes and Java events/state are delivered with `executeJavaScript`. Navigation away removes the globals and subscriptions.
+5. Interactive mouse/keyboard/clipboard/resize/GUI-scale/Chinese IME acceptance is explicitly not yet manually runtime verified in the phase plan. `runClient` reached Minecraft startup, MCEF loading, and `Chromium Embedded Framework initialized`.
 
 ### Near-term project direction
 

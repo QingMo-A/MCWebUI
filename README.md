@@ -23,7 +23,7 @@ plans/                        Architecture and execution plans
 - `main`: stable checkpoints and releases.
 - `bridge`: active multiversion integration and development.
 
-The current experimental milestone is a bundled Vue page and backend-neutral Java bridge for a NeoForge 1.21.1 screen. The implementation proves the common contracts, RPC/state/resource semantics, input translation ports, and reproducible frontend/JAR build. CinemaMod MCEF `2.1.6-1.21.1` is resolved from its official release repository and wired through a real NeoForge client backend; the development client now reaches CEF initialization. Interactive screen/input acceptance still requires a manual in-game pass.
+The current experimental milestone is a shared Vue showcase and backend-neutral Java bridge for a NeoForge 1.21.1 screen. CinemaMod MCEF `2.1.6-1.21.1` is resolved from its official release repository and wired through the official JCEF `CefMessageRouter`/`CefQuery` path; the development client reaches CEF initialization. Interactive screen/input acceptance still requires a manual in-game pass.
 
 ## Current experimental status
 
@@ -32,11 +32,13 @@ Phase 1 scope was narrowed to **NeoForge 1.21.1** for this checkpoint. The origi
 Implemented locally:
 
 - Java 17-compatible common runtime contracts (`WebRuntime`, `WebView`, lifecycle, input, resources, bridge, state, security, and paint metrics).
-- Registry-based JSON bridge with handshake, request/response, event, state update, structured errors, and origin/capability checks.
-- NeoForge target-owned screen/input adapter, CinemaMod MCEF browser surface, `mcui://` classpath scheme handler, texture rendering, and explicit demo handlers (`demo.ping`, `demo.counter.increment`).
+- Registry-based JSON bridge with handshake, request/response, event, explicit subscribe/unsubscribe, state update, structured errors, and origin/capability checks.
+- A real browser host transport: trusted `mcui://` pages receive a small bootstrap that forwards JSON envelopes through JCEF `CefQuery`; navigation away removes the bridge and closes browser subscriptions.
+- One NeoForge `Screen` → `NeoForgeWebSession` → common `WebView`/`WebBridge` → MCEF surface path. The MCEF-native OpenGL texture path remains target-local; common no longer exposes texture IDs or a no-op input method.
+- NeoForge demo handlers (`demo.ping`, `demo.counter.increment`, `demo.error`, `runtime.diagnostics`) and a responsive shared Vue showcase with controls, bridge lab, runtime telemetry, feedback overlays, and input lab.
 - A single Vue/Vite playground bundle packaged under `web/playground` in the NeoForge JAR; no localhost server is required for packaged resources.
 
-Known limitation: `runClient` was smoke-tested through NeoForge startup and MCEF CEF initialization, but no scripted key press or manual GUI session was available to verify F8 screen open, paint output, Chinese IME, clipboard, or repeated close/reopen behavior. The MCEF native downloader remains owned by the MCEF mod; this repository does not vendor native binaries.
+Known limitation: `runClient` was smoke-tested through NeoForge startup and MCEF CEF initialization, but no scripted key press or manual GUI session was available to verify F8 screen open, paint output, Chinese IME, clipboard, resize/GUI scale, or repeated close/reopen behavior. Chinese composition is represented in the common input model, but full GLFW IME composition is a documented target limitation. The MCEF native downloader remains owned by the MCEF mod; this repository does not vendor native binaries.
 
 ## Requirements
 
@@ -57,11 +59,13 @@ npm run typecheck
 npm run build
 ```
 
+For this checkpoint, local Gradle frontend tasks were run with Node 22.22.2 explicitly on `PATH` because the shell image does not globally register `npm.cmd`.
+
 `frontendInstall`, `frontendTypecheck`, and `frontendBuild` are root Gradle lifecycle tasks. `frontendBuild` runs once before the NeoForge JAR task and stages `frontend/playground/dist` below `web/playground`; generated `dist/` and `node_modules/` remain ignored.
 
 ## Demo path
 
-The playground is the `MCWebUI Runtime Demo` page. It displays target/bridge status, the Java-pushed `demo.counter` channel, a typed `demo.ping` action, and an input field for English, numbers, Chinese IME, Backspace, and Ctrl+A/C/V checks. The NeoForge adapter binds F8, serves the page from `mcui://playground`, renders the MCEF texture, and forwards scaled input; only the final interactive/manual acceptance remains.
+The playground is the `MCWebUI Runtime Showcase` page. It displays a reactive connection state, target-supplied diagnostics, the Java-pushed `demo.counter` channel, a typed `demo.ping` action, structured errors, representative controls, overlays, a scrollable feed, and an input lab for English, numbers, Chinese IME, Backspace, and Ctrl+A/C/V checks. The NeoForge adapter binds F8, serves the page from `mcui://playground`, installs the trusted host bootstrap after page load, renders the MCEF texture, and forwards scaled input; only the final interactive/manual acceptance remains.
 
 ## Architecture summary
 
@@ -71,7 +75,7 @@ Vue playground
   -> JSON bridge envelope
   -> common Java WebBridge/WebStateStore/WebRuntime
   -> NeoForge adapter ports
-  -> CinemaMod MCEF 2.1.6-1.21.1 backend
+  -> JCEF CefMessageRouter -> CinemaMod MCEF 2.1.6-1.21.1 backend
   -> Minecraft Screen + texture upload
 ```
 

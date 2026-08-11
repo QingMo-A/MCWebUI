@@ -474,7 +474,17 @@ Minecraft runtime must not need the Vue template compiler or Node.js.
 - clipboard;
 - fullscreen/windowed transitions.
 
-## 17. Initial roadmap
+## 17. Phase 1 implementation decisions (NeoForge bridge checkpoint)
+
+The NeoForge 1.21.1 vertical slice now uses the official JCEF message-router transport. A trusted `mcui://<namespace>` page receives a private browser bootstrap after main-frame load; `send()` calls `window.cefQuery` with a JSON envelope, and Java responses/events/state are delivered back through a narrowly scoped `executeJavaScript` callback. The load hook removes the globals and closes host subscriptions when navigation leaves the trusted origin. No reflection, URL polling, localhost server, clipboard IPC, or arbitrary native bridge is used.
+
+State subscription is an explicit protocol operation (`subscribe`/`unsubscribe`). The frontend emits subscribe on the first local listener and unsubscribe after the last listener; the target host maps each channel to one `WebBridge` subscription, preserving latest-value semantics and close/reload cleanup.
+
+The active target composition is one `NeoForgeMinecraftScreen` -> `NeoForgeWebSession` -> common `WebView`/`WebBridge` -> `NeoForgeMcefBackend` path. Common `BrowserSurface` no longer exposes an OpenGL texture ID, and the old mandatory Java pixel-frame listener/uploader contract was removed because MCEF uploads its native texture directly. NeoForge's `NeoForgeRenderableSurface` owns that target-local capability. `WebView` has no public no-op `dispatchInput`; the browser surface is the input endpoint.
+
+The shared showcase obtains target/backend/version/metrics through the registered `runtime.diagnostics` RPC. Frontend source does not hardcode a loader identity, so a future Forge adapter can provide the same logical shape.
+
+## 18. Initial roadmap
 
 ### Phase 0 — Repository bootstrap
 
@@ -533,7 +543,7 @@ Expected topics:
 - validate performance and ergonomics in a real mod;
 - only then consider larger migrations.
 
-## 18. Non-goals for early phases
+## 19. Non-goals for early phases
 
 Do not initially attempt to:
 
@@ -545,7 +555,7 @@ Do not initially attempt to:
 - build world-space displays before Screen runtime is stable;
 - reproduce every native Minecraft widget before the bridge/runtime is proven.
 
-## 19. Architecture reopen rule
+## 20. Architecture reopen rule
 
 Do not continuously rewrite this architecture for aesthetic purity.
 
