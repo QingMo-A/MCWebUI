@@ -7,20 +7,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /** Locks the GUI-coordinate contract used by the browser surface and Screen input routing. */
 class NeoForgeWebSessionViewportTest {
     @Test
-    void browserViewportUsesGuiDimensionsAtHighScale() {
+    void browserViewportSupportsGuiAndFramebufferDensity() {
         int guiWidth = 1280;
         int guiHeight = 720;
         double guiScale = 2.0;
 
-        // The scale is intentionally not applied to the CEF viewport: Minecraft's Screen
-        // projection scales the rendered quad, while CEF and mouse events share GUI units.
-        assertEquals(guiWidth, NeoForgeWebSession.browserDimension(guiWidth, guiScale));
-        assertEquals(guiHeight, NeoForgeWebSession.browserDimension(guiHeight, guiScale));
+        // GUI mode intentionally keeps logical dimensions, while framebuffer mode restores the
+        // physical-equivalent viewport for the same window at different GUI scales.
+        assertEquals(guiWidth, NeoForgeWebSession.browserDimension(guiWidth, guiScale, true));
+        assertEquals(guiHeight, NeoForgeWebSession.browserDimension(guiHeight, guiScale, true));
+        assertEquals(2560, NeoForgeWebSession.browserDimension(2560, 1.0, false));
+        assertEquals(2560, NeoForgeWebSession.browserDimension(1280, 2.0, false));
         assertEquals(318.5, NeoForgeWebSession.mapCoordinate(318.5, guiWidth, guiWidth));
     }
 
     @Test
-    void lockedViewportMapsCurrentGuiCoordinatesByRatio() {
+    void framebufferViewportMapsCurrentGuiCoordinatesByRatio() {
         assertEquals(640.0, NeoForgeWebSession.mapCoordinate(960.0, 1920, 1280));
         // Use independent extents so a width-based mapping cannot accidentally pass for y.
         assertEquals(300.0, NeoForgeWebSession.mapCoordinate(450.0, 900, 600));

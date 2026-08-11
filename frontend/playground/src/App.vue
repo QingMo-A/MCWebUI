@@ -15,6 +15,14 @@ const checked = ref(true);
 const choice = ref("bridge");
 const enabled = ref(true);
 const selectValue = ref("balanced");
+const selectOpen = ref(false);
+const selectRoot = ref<HTMLElement | null>(null);
+const selectTrigger = ref<HTMLButtonElement | null>(null);
+const selectOptions = [
+  { value: "focused", label: "Focused" },
+  { value: "balanced", label: "Balanced" },
+  { value: "expressive", label: "Expressive" },
+];
 const rangeValue = ref(62);
 const progress = ref(72);
 const selectedSegment = ref("Vue");
@@ -40,6 +48,7 @@ const runtimeRows = computed(() => [
   ["Viewport mode", diagnostics.value.viewportMode ?? "—"],
   ["GUI scale", diagnostics.value.guiScale ?? "—"],
 ]);
+const selectLabel = computed(() => selectOptions.find((option) => option.value === selectValue.value)?.label ?? "Select an option");
 
 async function pingJava() {
   bridgeError.value = null;
@@ -73,10 +82,28 @@ function notify(messageText: string) {
   if (toastTimer) window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => { toast.value = ""; }, 2600);
 }
+function toggleSelect() { selectOpen.value = !selectOpen.value; }
+function chooseSelect(value: string) {
+  selectValue.value = value;
+  selectOpen.value = false;
+  selectTrigger.value?.focus();
+}
+function closeSelectOnOutside(event: PointerEvent) {
+  if (selectOpen.value && !selectRoot.value?.contains(event.target as Node)) selectOpen.value = false;
+}
+function closeSelectOnEscape(event: KeyboardEvent) {
+  if (event.key === "Escape" && selectOpen.value) {
+    event.preventDefault();
+    selectOpen.value = false;
+    selectTrigger.value?.focus();
+  }
+}
 watch(activeTab, (tab) => {
   if (tab === "runtime") void refreshDiagnostics();
 });
 onMounted(async () => {
+  document.addEventListener("pointerdown", closeSelectOnOutside);
+  document.addEventListener("keydown", closeSelectOnEscape);
   try {
     await client.connect();
     // Diagnostics are intentionally sampled on connect, when the Runtime tab is opened, or
@@ -86,6 +113,8 @@ onMounted(async () => {
   } catch { /* connectionState/connectionError expose the failure to the UI */ }
 });
 onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", closeSelectOnOutside);
+  document.removeEventListener("keydown", closeSelectOnEscape);
   if (toastTimer) window.clearTimeout(toastTimer);
 });
 </script>
@@ -132,7 +161,7 @@ onBeforeUnmount(() => {
           <div class="control-grid">
             <article class="panel section-card"><p class="eyebrow">Actions</p><h3>Buttons</h3><div class="button-stack"><button class="button primary" @click="notify('Primary action received')">Primary action</button><button class="button secondary">Secondary</button><button class="button danger" @click="triggerBridgeError">Danger / error</button><button class="button secondary" :disabled="!enabled">Disabled</button><button class="button primary" :disabled="loading" @click="loading = !loading">{{ loading ? 'Loading…' : 'Toggle loading' }}</button></div></article>
             <article class="panel section-card"><p class="eyebrow">Forms</p><h3>Inputs</h3><label class="field">Text input<input v-model="message" placeholder="Your message" /></label><label class="field">Textarea<textarea v-model="notes" rows="3"></textarea></label><div class="check-row"><label class="check"><input v-model="checked" type="checkbox" /> Enable notifications</label><label class="check"><input v-model="enabled" type="checkbox" /> Enable actions</label></div></article>
-            <article class="panel section-card"><p class="eyebrow">Choice</p><h3>Selection</h3><label class="field">Select<select v-model="selectValue"><option value="focused">Focused</option><option value="balanced">Balanced</option><option value="expressive">Expressive</option></select></label><div class="radio-list"><label class="check"><input v-model="choice" type="radio" value="bridge" /> Bridge first</label><label class="check"><input v-model="choice" type="radio" value="visual" /> Visual first</label></div><label class="switch-row"><span>Live updates</span><button class="switch" :class="{ on: enabled }" role="switch" :aria-checked="enabled" @click="enabled = !enabled"><span></span></button></label></article>
+            <article class="panel section-card"><p class="eyebrow">Choice</p><h3>Selection</h3><div class="field"><span>Select</span><div ref="selectRoot" class="custom-select"><button ref="selectTrigger" type="button" class="select-trigger" aria-haspopup="listbox" :aria-expanded="selectOpen" aria-controls="playground-select-options" @click="toggleSelect"><span>{{ selectLabel }}</span><span class="select-chevron" aria-hidden="true">⌄</span></button><div v-if="selectOpen" id="playground-select-options" class="select-menu" role="listbox" aria-label="Select an emphasis"><button v-for="option in selectOptions" :key="option.value" type="button" class="select-option" role="option" :aria-selected="selectValue === option.value" @click="chooseSelect(option.value)">{{ option.label }}</button></div></div></div><div class="radio-list"><label class="check"><input v-model="choice" type="radio" value="bridge" /> Bridge first</label><label class="check"><input v-model="choice" type="radio" value="visual" /> Visual first</label></div><label class="switch-row"><span>Live updates</span><button class="switch" :class="{ on: enabled }" role="switch" :aria-checked="enabled" @click="enabled = !enabled"><span></span></button></label></article>
             <article class="panel section-card"><p class="eyebrow">Feedback</p><h3>Progress & status</h3><div class="progress-label"><span>Bundle readiness</span><strong>{{ progress }}%</strong></div><progress :value="progress" max="100">{{ progress }}%</progress><label class="field">Range <input v-model="rangeValue" type="range" min="0" max="100" /></label><div class="badge-row"><span class="badge badge-green">Connected</span><span class="badge badge-amber">Preview</span><span class="badge badge-red">Error</span></div><div class="segmented" role="tablist"><button v-for="segment in ['Vue','Core','Browser']" :key="segment" :class="{ selected: selectedSegment === segment }" role="tab" @click="selectedSegment = segment">{{ segment }}</button></div></article>
             <article class="panel section-card scroll-card"><div class="section-heading"><div><p class="eyebrow">Scrollable region</p><h3>Signal feed</h3></div><span class="badge">14 items</span></div><ul class="signal-list"><li v-for="item in scrollItems" :key="item.title"><span class="signal-icon">·</span><div><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div></li></ul></article>
             <article class="panel section-card"><p class="eyebrow">Overlay</p><h3>Dialog & toast</h3><p class="muted">Feedback stays in context and remains keyboard reachable.</p><div class="button-row"><button class="button secondary" @click="showModal = true">Open dialog</button><button class="button secondary" @click="notify('This is a lightweight toast')">Show toast</button></div></article>

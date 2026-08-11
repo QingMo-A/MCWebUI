@@ -27,8 +27,8 @@ public final class NeoForgeMod {
         private ClientConfig() {
             ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
             followGuiSize = builder
-                    .comment("Resize the browser viewport whenever Minecraft's GUI size changes.",
-                            "Disable to keep the viewport from reallocating during window or GUI-scale resizing.")
+                    .comment("Use Minecraft's logical GUI size for the browser viewport.",
+                            "Disable to preserve GUI-scale-1 CSS density with framebuffer-equivalent pixels.")
                     .translation("mcwebui.config.followGuiSize")
                     .define("followGuiSize", true);
             spec = builder.build();

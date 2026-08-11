@@ -56,13 +56,11 @@ final class NeoForgeWebSession implements AutoCloseable {
         this.minecraftGuiWidth = requireDimension(guiWidth, "guiWidth");
         this.minecraftGuiHeight = requireDimension(guiHeight, "guiHeight");
         this.followGuiSize = NeoForgeMod.CLIENT_CONFIG.followGuiSize();
-        // Screen coordinates are GUI-scaled already.  Keep the browser viewport in that same
-        // coordinate space instead of multiplying it by the OS framebuffer scale: Minecraft's
-        // pose/projection scales the quad when it is composited, while CEF receives the exact
-        // coordinates produced by Screen mouse events.  This also avoids allocating a second,
-        // needlessly large RGBA surface on high GUI scales.
-        int width = browserDimension(guiWidth, this.guiScale);
-        int height = browserDimension(guiHeight, this.guiScale);
+        // The default GUI mode uses Screen's logical coordinates directly. In framebuffer mode,
+        // scale the browser back to physical-equivalent pixels so GUI scale 1 and 2 keep the
+        // same CSS density in a fixed-size window; resize updates that physical viewport.
+        int width = browserDimension(guiWidth, this.guiScale, this.followGuiSize);
+        int height = browserDimension(guiHeight, this.guiScale, this.followGuiSize);
         this.browserViewportWidth = width;
         this.browserViewportHeight = height;
         try {
@@ -87,9 +85,8 @@ final class NeoForgeWebSession implements AutoCloseable {
         this.guiScale = requireScale(guiScale);
         this.minecraftGuiWidth = requireDimension(guiWidth, "guiWidth");
         this.minecraftGuiHeight = requireDimension(guiHeight, "guiHeight");
-        if (!followGuiSize) return;
-        int width = browserDimension(guiWidth, this.guiScale);
-        int height = browserDimension(guiHeight, this.guiScale);
+        int width = browserDimension(guiWidth, this.guiScale, this.followGuiSize);
+        int height = browserDimension(guiHeight, this.guiScale, this.followGuiSize);
         if (width == browserViewportWidth && height == browserViewportHeight) return;
         this.browserViewportWidth = width;
         this.browserViewportHeight = height;
@@ -133,7 +130,7 @@ final class NeoForgeWebSession implements AutoCloseable {
         info.put("browserViewportWidth", surface == null ? 0 : surface.width());
         info.put("browserViewportHeight", surface == null ? 0 : surface.height());
         info.put("followGuiSize", followGuiSize);
-        info.put("viewportMode", followGuiSize ? "GUI" : "LOCKED");
+        info.put("viewportMode", followGuiSize ? "GUI" : "FRAMEBUFFER");
         info.put("guiScale", guiScale);
         info.put("paintCallbacks", surface == null ? 0L : surface.metrics().paintCallbacks());
         info.put("framebufferWidth", surface == null ? 0 : surface.metrics().width());
@@ -148,9 +145,14 @@ final class NeoForgeWebSession implements AutoCloseable {
     private double browserY(double guiCoordinate) { return mapCoordinate(guiCoordinate, minecraftGuiHeight, browserViewportHeight); }
 
     // Keep these conversions package-visible so the coordinate-space contract can be tested
-    // without constructing a live CEF/Minecraft session. The scale is validated by init/resize;
-    // it is passed here only to make the intentionally identity conversion explicit at callsites.
-    static int browserDimension(int guiSize, double guiScale) { return Math.max(1, guiSize); }
+    // without constructing a live CEF/Minecraft session. The scale is validated by init/resize.
+    static int browserDimension(int guiSize, double guiScale, boolean followGuiSize) {
+        if (guiSize < 1) throw new IllegalArgumentException("guiSize must be positive");
+        if (followGuiSize) return guiSize;
+        double scaled = guiSize * guiScale;
+        if (!Double.isFinite(scaled)) return Integer.MAX_VALUE;
+        return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, Math.round(scaled)));
+    }
     static double mapCoordinate(double guiCoordinate, int guiSize, int browserSize) {
         if (guiSize < 1 || browserSize < 1) throw new IllegalArgumentException("coordinate spaces must be positive");
         return guiCoordinate * browserSize / (double) guiSize;
