@@ -22,7 +22,7 @@ Visual polish is secondary to proving this path cleanly.
 
 ### Scope checkpoint (2026-08-11)
 
-The user-directed checkpoint narrows new implementation and runtime acceptance to **NeoForge 1.21.1**. The Forge 1.20.1 module and manifest entry remain untouched as preserved project structure; no Forge runtime result is claimed here. The NeoForge native browser launch is blocked by dependency availability documented below. Common contracts and frontend semantics are implemented and locally tested without claiming an in-game launch.
+The user-directed checkpoint narrows new implementation and runtime acceptance to **NeoForge 1.21.1**. The Forge 1.20.1 module and manifest entry remain untouched as preserved project structure; no Forge runtime result is claimed here. CinemaMod MCEF `2.1.6-1.21.1` is now verified and integrated as the real NeoForge browser backend. `runClient` reaches Minecraft startup and CEF initialization; interactive screen/input acceptance remains a manual follow-up.
 
 Implementation checkpoint commit: `5511d16` (`implement phase one browser runtime slice`).
 
@@ -78,17 +78,18 @@ The public MCWebUI API must remain backend-neutral even if both targets use the 
 
 | component | selected version / candidate | source | reason and target compatibility |
 | --- | --- | --- | --- |
-| Gradle wrapper | 8.8 | [Gradle distribution](https://services.gradle.org/distributions/) | Compatible with the local JDK 17/21 toolchains and the verified NeoForge ModDevGradle line. |
+| Gradle wrapper | 8.13 | [Gradle distribution](https://services.gradle.org/distributions/) | Required by the verified NeoForge ModDevGradle 2.0.141 line and compatible with the local JDK 17/21 toolchains. |
 | ForgeGradle | `[6.0,6.2)` (research only) | [ForgeGradle 6.x docs](https://docs.minecraftforge.net/en/fg-6.x/) | Official range for Forge 1.20.1; Forge implementation is out of this scope checkpoint and is not applied. |
-| NeoForge build plugin | ModDevGradle `1.0.11` (research candidate) | [NeoForged ModDevGradle](https://github.com/neoforged/ModDevGradle) | Official plugin documents Gradle 8.8 compatibility and Java 21; not applied to a native run because the browser backend gate is unresolved. |
-| MCEF backend | CCBlueX `com.github.CCBlueX:mcef:3.1.0-1.21.4` (JitPack candidate) | [CCBlueX/mcef README](https://github.com/CCBlueX/mcef) | Maintained fork and native downloader are verified, but the published candidate targets 1.21.4, not NeoForge 1.21.1. It is therefore not declared as a fake/incompatible dependency; `NeoForgeMcefBackend` fails explicitly until a 1.21.1 artifact is verified. |
+| NeoForge build plugin | ModDevGradle `2.0.141` | [NeoForged ModDevGradle](https://github.com/neoforged/ModDevGradle) | Official ModDev plugin used by the real NeoForge compile/run path; requires Gradle 8.13 in this environment. |
+| NeoForge userdev | `net.neoforged:neoforge:21.1.216` | [NeoForge Maven](https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.216/) | Minecraft 1.21.1 userdev coordinates used by the target's ModDev configuration. |
+| MCEF backend | CinemaMod `com.cinemamod:mcef:2.1.6-1.21.1` (compile-only) + `com.cinemamod:mcef-neoforge:2.1.6-1.21.1` (runtime) | [CinemaMod/mcef 2.1.6-1.21.1](https://github.com/CinemaMod/mcef/tree/2.1.6-1.21.1), [CinemaMod release metadata](https://mcef-download.cinemamod.com/repositories/releases/com/cinemamod/mcef/maven-metadata.xml) | Official tag, POMs, jars, MCEF APIs, and NeoForge metadata were verified. The target uses `MCEF.createBrowser`, `MCEFBrowser`, `MCEFRenderer`, and `CefApp.registerSchemeHandlerFactory` without leaking these types into common. |
 | Forge MCEF reference | MCEF `2.1.6-1.20.1` (artifact listing only) | [CurseForge files](https://www.curseforge.com/minecraft/mc-mods/mcef/files/all?page=1&pageSize=20&version=1.20.1) | Confirms a historical Forge 1.20.1 build, but does not establish a shared backend with NeoForge 1.21.1 and is outside this checkpoint. |
 | Vue | `3.5.41` | [npm Vue registry](https://registry.npmjs.org/vue/latest) | Current stable Vue 3 release used by the shared playground. |
 | Vite | `8.2.1` | [npm Vite registry](https://registry.npmjs.org/vite/latest) and [Vite compatibility docs](https://vite.dev/guide/) | Current stable release; requires Node `^20.19.0 || >=22.12.0`. |
 | TypeScript | `7.0.2` | [npm TypeScript registry](https://registry.npmjs.org/typescript/latest) | Current stable compiler used for core/vue/playground typechecks. |
 | Node.js | `22.22.2` for local validation; requirement `>=20.19.0 || >=22.12.0` | [Node.js release archive](https://nodejs.org/en/download/archive/v22) | Satisfies Vite's documented engine requirement. |
 
-MCEF/JCEF native binaries are downloaded by the selected MCEF fork's own bootstrap/downloader; this repository does not copy unverified native binaries. The verified NeoForge 1.21.1 artifact gap is a real blocker for launching Minecraft, not a reason to leak MCEF types into common.
+MCEF/JCEF native binaries are downloaded by CinemaMod MCEF's own bootstrap/downloader; this repository does not copy native binaries. The development client smoke test reached `Chromium Embedded Framework initialized`; no native library is vendored in the MCWebUI JAR.
 
 ## 4. Vertical-slice architecture
 
@@ -381,7 +382,7 @@ A full-frame upload implementation is acceptable only as a temporary Phase 1 pat
 
 Do not bake a full-frame-per-Minecraft-frame assumption into public APIs.
 
-Checkpoint result: common `BrowserSurface`, `PaintFrame`, `DirtyRect`, `FrameMetrics`, and target texture-uploader ports are implemented. No native MCEF paint callback was executed because the NeoForge 1.21.1 backend candidate is unavailable; paint/upload counters are instrumentation hooks for the next runtime checkpoint.
+Checkpoint result: common `BrowserSurface`, `PaintFrame`, `DirtyRect`, `FrameMetrics`, and target texture-uploader ports are implemented. The real MCEF surface subclasses `MCEFBrowser` so native paint callbacks record frame/byte counters while MCEF's renderer uploads the OpenGL texture. A timed `runClient` smoke test reached CEF initialization; no interactive paint/frame sample was captured.
 
 ## 14. Resize and scale
 
@@ -419,7 +420,7 @@ Required Phase 1 behavior:
 
 If the browser backend cannot support a required IME path on one target/platform, record it as an explicit capability deviation rather than silently declaring input complete.
 
-Checkpoint result: common input event semantics and NeoForge coordinate/GUI-scale translation are implemented and compile-tested. Mouse, wheel, keyboard, text, focus, clipboard, and Chinese IME remain **not runtime verified** until a real NeoForge browser surface is available; no synthetic `charTyped` claim is made.
+Checkpoint result: common input event semantics and NeoForge coordinate/GUI-scale translation are implemented and compile-tested. The real MCEF backend forwards mouse, wheel, key, and text events; mouse, wheel, keyboard, text, focus, clipboard, and Chinese IME remain **not manually runtime verified** in this environment, and no synthetic `charTyped` claim is made.
 
 ## 16. Security acceptance
 
@@ -463,7 +464,7 @@ Before Phase 1 closes, establish commands for:
 
 Target manifest infrastructure may be expanded with lifecycle aliases only when the real loader Gradle plugins are installed, rather than adding fake run tasks during repository bootstrap.
 
-Checkpoint local results: `:common:test`, `:targets:neoforge-1.21.1:test`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets` pass. The preserved Forge target's existing Java test task also passes with no tests. These are local Gradle validations, not GitHub CI. `architectureCheck` verifies common has no Minecraft/loader/browser implementation imports and that no target-specific frontend source trees exist.
+Checkpoint local results: `:common:test`, `:targets:neoforge-1.21.1:test`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets` pass with Gradle 8.13/ModDevGradle 2.0.141. `runClient` reaches NeoForge 1.21.1 startup and MCEF CEF initialization before the timed smoke-test stop. The preserved Forge target's existing Java test task also passes with no tests. These are local Gradle validations, not GitHub CI. `architectureCheck` verifies common has no Minecraft/loader/browser implementation imports and that no target-specific frontend source trees exist.
 
 ## 19. Performance baseline
 
@@ -484,7 +485,7 @@ Measure on a documented machine/profile:
 
 Phase 2 performance gates should be derived from these measurements.
 
-Checkpoint result: only the lightweight `FrameMetrics` counters and dirty-rectangle data path are present. No FPS, memory, paint-rate, or upload-throughput numbers are reported because Minecraft could not be launched without a verified NeoForge 1.21.1 MCEF backend.
+Checkpoint result: lightweight `FrameMetrics` counters and dirty-rectangle data path are present, and the real MCEF surface records paint/upload callbacks. No FPS, memory, paint-rate, or upload-throughput numbers are reported because this run was a timed startup smoke test rather than an interactive benchmark.
 
 ## 20. Commit discipline
 
@@ -510,7 +511,7 @@ Never force push shared `bridge` history.
 Phase 1 may be marked `CLOSED / VERIFIED` only when all are true:
 
 - [ ] Forge 1.20.1 launches the MCWebUI playground screen (out of scope for this checkpoint).
-- [ ] NeoForge 1.21.1 launches the MCWebUI playground screen (blocked by verified MCEF artifact availability).
+- [ ] NeoForge 1.21.1 launches the MCWebUI playground screen (client + CEF initialization smoke-tested; F8 screen interaction still pending).
 - [ ] bundled Vue assets load from the mod/JAR without external server dependency.
 - [ ] mouse/wheel/keyboard/text focus work in a real game (ports implemented; runtime pending).
 - [ ] Chinese input has been tested and result documented (runtime pending; no synthetic claim).
@@ -520,7 +521,7 @@ Phase 1 may be marked `CLOSED / VERIFIED` only when all are true:
 - [ ] screen close/reopen leaves no obvious browser/texture leak in-game (common lifecycle is tested; runtime pending).
 - [ ] resize/GUI-scale path is verified in-game (translation port is compile-tested; runtime pending).
 - [x] frontend production build succeeds.
-- [x] NeoForge target Java/JAR build succeeds locally; native loader build is blocked by MCEF selection.
+- [x] NeoForge target Java/JAR build succeeds locally with the CinemaMod MCEF 2.1.6-1.21.1 coordinates.
 - [ ] baseline performance metrics are recorded (instrumentation only).
 - [ ] no Minecraft/loader/browser implementation types leak into common public contracts.
 
