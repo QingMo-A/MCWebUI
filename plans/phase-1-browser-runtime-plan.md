@@ -355,7 +355,7 @@ Checkpoint result: `npm ci`, `npm run typecheck`, and `npm run build` pass local
 
 NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `7284C547BBB92EF7E2EA61FA9EE3083B04C80C23E8A730B98B7BECBEE21DC477`. The packaged `index.html` (`AD699051AAA279E1E861162402FAFF2D4AA87FDD01A9A3B54FD3A8416A0BF46`), JS (`20F7346024F25C2A28020D145F108064D0A703305045A7496EBB3AA8AFE09808`), and CSS (`4F84F12437DB4BDFFB161196FA69200237FDF879B9CECFD3DA032B1372BFBA0E`) hashes match the single `frontend/playground/dist` source. The JAR contains common runtime classes, only the NeoForge adapter, `META-INF/neoforge.mods.toml`, and `web/playground` resources.
 
-The final target JAR should contain the same logical playground bundle on both supported targets.
+The long-term parity goal remains a shared logical playground bundle, but this user-directed checkpoint audits and accepts only the NeoForge 1.21.1 JAR; Forge 1.20.1 parity is deferred while its existing structure is preserved.
 
 Node/Vite are development/build dependencies only; players must not need them.
 
