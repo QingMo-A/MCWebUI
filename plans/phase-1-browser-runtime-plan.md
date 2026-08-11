@@ -1,6 +1,6 @@
 # Phase 1 — Browser Runtime Vertical Slice
 
-Status: **IMPLEMENTED / RUNTIME ACCEPTANCE CHECKPOINT (NeoForge-only scope; manual interactive pass pending)**
+Status: **IMPLEMENTED / CORE RUNTIME ACCEPTED (NeoForge-only scope; extended input pass pending)**
 
 Depends on: `plans/architecture-plan.md`
 
@@ -22,7 +22,7 @@ Visual polish is secondary to proving this path cleanly.
 
 ### Scope checkpoint (2026-08-11)
 
-The user-directed checkpoint narrows new implementation and runtime acceptance to **NeoForge 1.21.1**. The Forge 1.20.1 module and manifest entry remain untouched as preserved project structure; no Forge runtime result is claimed here. CinemaMod MCEF `2.1.6-1.21.1` is integrated as the real NeoForge browser backend, including an official JCEF `CefMessageRouter`/`CefQuery` transport and trusted-origin bootstrap. `runClient` reaches Minecraft startup and CEF initialization; interactive screen/input acceptance remains a manual follow-up.
+The user-directed checkpoint narrows new implementation and runtime acceptance to **NeoForge 1.21.1**. The Forge 1.20.1 module and manifest entry remain untouched as preserved project structure; no Forge runtime result is claimed here. CinemaMod MCEF `2.1.6-1.21.1` is integrated as the real NeoForge browser backend, including an official JCEF `CefMessageRouter`/`CefQuery` transport and trusted-origin bootstrap. `runClient` now verifies the core F8 display and bridge path; extended input/lifecycle acceptance remains a manual follow-up.
 
 Implementation checkpoint commits: `5511d16` (`implement phase one browser runtime slice`) and `0f9f83a` (`integrate neoforge mcef backend`). Documentation checkpoints are recorded in git history.
 
@@ -34,7 +34,7 @@ Implementation commits: `c494056` (`fix bridge bootstrap lifecycle and runtime a
 
 The mapped NeoForge 21.1.216 `Screen.java` source was inspected from `neoforge-21.1.216-sources.jar`: `Screen.resize(Minecraft,int,int)` updates dimensions and calls `repositionElements()` without invoking `init()`. `NeoForgeWebSession` nevertheless guards `init()` with deterministic once-only initialization and cleans partial creation, preventing duplicate WebViews/MCEF browsers if a future lifecycle path invokes init again. `BrowserBackend` exposes only `createSurface(config, bridge)`. Diagnostics now distinguish Minecraft GUI dimensions, browser viewport dimensions, optional measured framebuffer dimensions, GUI scale, paint callbacks, and `estimatedPaintBytes`; the estimate is explicitly not GPU-upload telemetry.
 
-Automatic frontend and Java validation for this checkpoint passed: `npm ci`, `npm run typecheck`, `npm run build`, `npm run test` (6 tests), `:common:test`, NeoForge tests, `architectureCheck`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets`. `runClient` automatically reached Minecraft startup, MCEF loading, and `Chromium Embedded Framework initialized`. F8 rendering and input interactions remain **NOT VERIFIED** manually, including mouse, wheel, keyboard, clipboard, resize, GUI scale, close/reopen, and Chinese IME (no synthetic IME claim). The common source-set merge debt remains documented and unchanged; Forge implementation remains out of scope.
+Automatic frontend and Java validation for this checkpoint passed: `npm ci`, `npm run typecheck`, `npm run build`, `npm run test` (8 tests), `:common:test`, NeoForge tests, `architectureCheck`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets`. Implementation commit `c725903` fixes dev-run resource staging, exact CEF response lengths, early custom-scheme registration, qualified trusted origins, GUI quad rendering, and minimal browser handshake decoding. A real `runClient` pass opened the F8 screen, rendered the shared bundle, reached `Connected`, received Java-pushed `demo.counter`, returned `demo.ping`, and populated NeoForge/Minecraft/MCEF diagnostics. Mouse/wheel/keyboard editing, clipboard, resize, GUI scale, close/reopen, and Chinese IME remain **NOT FULLY VERIFIED** (no synthetic IME claim). The common source-set merge debt remains documented and unchanged; Forge implementation remains out of scope.
 
 ## 2. Scope freeze
 
@@ -207,8 +207,8 @@ Implement a controlled local origin/scheme for packaged content.
 Target semantics:
 
 ```text
-mcui://playground/index.html
-mcui://playground/assets/...
+mcui://playground.mcwebui/index.html
+mcui://playground.mcwebui/assets/...
 ```
 
 Requirements:
@@ -363,7 +363,7 @@ Avoid committed generated `dist/` output unless a later distribution requirement
 
 Checkpoint result: `npm ci`, `npm run typecheck`, and `npm run build` pass locally with Node 22.22.2. Root Gradle tasks `frontendInstall`, `frontendTypecheck`, and `frontendBuild` reuse the root lockfile and stage the shared `frontend/playground/dist` output into the NeoForge JAR. Generated output is ignored.
 
-NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `693EFC946A67C03C983AD81987F7C19DEBB4A8209D1D8CF66CB7D9034CFF6488`. The packaged `index.html` (`12A27D093BBE849891C04A63C812438349255BF2B7608D070C9C5BCCB5944785`), JS (`187C8D34CF74C4E30E3E7575AEEB4D0892771B2421A394C7E620022DE9A0E32D`), and CSS (`B70AB76C3022E19FE560908DC9CEC8232BE0EB6368A2F329987D7AF35BB8117`) hashes match the single `frontend/playground/dist` source. The JAR contains common runtime classes exactly once, only the NeoForge adapter, `META-INF/neoforge.mods.toml`, and `web/playground` resources; no Forge adapter, frontend source, or node_modules is packaged.
+NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `8CB975F03E9206A714F263A3391A6637B7A659D0DDC14930D3CC3776EEC264E9`. The packaged `index.html` (`12A27D093BBE849891C04A63C812438349255BF2B7608D070C9C5BCCB5944785`), JS (`187C8D34CF74C4E30E3E7575AEEB4D0892771B2421A394C7E620022DE9A0E32D`), and CSS (`B70AB76C3022E19FE560908DC9CEC8232BE0EB6368A2F329987D7AF35BB8117`) hashes match the single `frontend/playground/dist` source. The JAR has 84 entries, contains common runtime classes exactly once and three web files, and has no duplicate entries, Forge adapter, frontend source, source map, or node_modules content.
 
 The long-term parity goal remains a shared logical playground bundle, but this user-directed checkpoint audits and accepts only the NeoForge 1.21.1 JAR; Forge 1.20.1 parity is deferred while its existing structure is preserved.
 
@@ -474,7 +474,7 @@ Before Phase 1 closes, establish commands for:
 
 Target manifest infrastructure may be expanded with lifecycle aliases only when the real loader Gradle plugins are installed, rather than adding fake run tasks during repository bootstrap.
 
-Checkpoint local results: `:common:test`, `:targets:neoforge-1.21.1:test`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets` pass with Gradle 8.13/ModDevGradle 2.0.141. `architectureCheck` also passes. `npm run test` passes the delayed-host regression suite alongside `npm ci`, `npm run typecheck`, and `npm run build`. `runClient` reaches NeoForge 1.21.1 startup and MCEF CEF initialization before the timed smoke-test stop. The preserved Forge target's existing Java test task also passes with no tests. These are local Gradle validations, not GitHub CI; F8/input/IME remain not manually verified.
+Checkpoint local results: `:common:test`, `:targets:neoforge-1.21.1:test`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets` pass with Gradle 8.13/ModDevGradle 2.0.141. `architectureCheck` also passes. `npm run test` passes 8 frontend tests alongside `npm ci`, `npm run typecheck`, and `npm run build`. A real `runClient` session verified F8 rendering, a connected CefQuery handshake, Java-pushed state, `demo.ping`, diagnostics, and a clean Minecraft shutdown. The preserved Forge target's existing Java test task also passes with no tests. These are local validations, not GitHub CI; the extended input/IME/lifecycle matrix remains pending.
 
 ## 19. Performance baseline
 
@@ -521,8 +521,8 @@ Never force push shared `bridge` history.
 Phase 1 may be marked `CLOSED / VERIFIED` only when all are true:
 
 - [ ] Forge 1.20.1 launches the MCWebUI playground screen (out of scope for this checkpoint).
-- [ ] NeoForge 1.21.1 launches the MCWebUI playground screen (client + CEF initialization smoke-tested; F8 screen interaction still pending).
-- [ ] bundled Vue assets load from the mod/JAR without external server dependency.
+- [x] NeoForge 1.21.1 launches the MCWebUI playground screen and renders the F8 showcase.
+- [x] bundled Vue assets load from the mod/JAR without external server dependency.
 - [ ] mouse/wheel/keyboard/text focus work in a real game (ports implemented; runtime pending).
 - [ ] Chinese input has been tested and result documented (runtime pending; no synthetic claim).
 - [x] JS → Java typed RPC semantics are implemented and common-tested.
