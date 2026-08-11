@@ -1,6 +1,6 @@
 # Phase 1 — Browser Runtime Vertical Slice
 
-Status: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only scope; bridge/showcase checkpoint)**
+Status: **IMPLEMENTED / RUNTIME ACCEPTANCE CHECKPOINT (NeoForge-only scope; manual interactive pass pending)**
 
 Depends on: `plans/architecture-plan.md`
 
@@ -25,6 +25,16 @@ Visual polish is secondary to proving this path cleanly.
 The user-directed checkpoint narrows new implementation and runtime acceptance to **NeoForge 1.21.1**. The Forge 1.20.1 module and manifest entry remain untouched as preserved project structure; no Forge runtime result is claimed here. CinemaMod MCEF `2.1.6-1.21.1` is integrated as the real NeoForge browser backend, including an official JCEF `CefMessageRouter`/`CefQuery` transport and trusted-origin bootstrap. `runClient` reaches Minecraft startup and CEF initialization; interactive screen/input acceptance remains a manual follow-up.
 
 Implementation checkpoint commits: `5511d16` (`implement phase one browser runtime slice`) and `0f9f83a` (`integrate neoforge mcef backend`). Documentation checkpoints are recorded in git history.
+
+### Runtime acceptance checkpoint (2026-08-11)
+
+Implementation commit: `c494056` (`fix bridge bootstrap lifecycle and runtime acceptance`). The previous frontend race eagerly captured a missing `window.__MCWEBUI_BRIDGE__`; the default transport now resolves the current host at connect/send time, listens for a private bridge-ready event, and uses sparse bounded fallback checks. A client can therefore be created before CEF installs the host and still complete handshake, RPC, and state delivery later. Local state listeners are retained across connection failures; the core client activates one host subscription per channel only after handshake, removes it after the last local listener, and re-subscribes on reconnect. Vitest locks this exact delayed-host race plus RPC, state, unsubscribe, close, reconnect, and transport-error behavior.
+
+`DefaultWebView.initialize()` now only reaches browser `READY`; it does not call `WebBridge.handshake()`. Browser handshake is negotiated by the JS transport. Host-side `publishState()` remains valid before a browser connects, while browser RPC/state subscribe operations require negotiated capabilities. Trusted reload and untrusted navigation clear bridge globals, host subscriptions, queued messages, and handshake state; close removes the `SURFACES` entry and closes bridge/browser resources.
+
+The mapped NeoForge 21.1.216 `Screen.java` source was inspected from `neoforge-21.1.216-sources.jar`: `Screen.resize(Minecraft,int,int)` updates dimensions and calls `repositionElements()` without invoking `init()`. `NeoForgeWebSession` nevertheless guards `init()` with deterministic once-only initialization and cleans partial creation, preventing duplicate WebViews/MCEF browsers if a future lifecycle path invokes init again. `BrowserBackend` exposes only `createSurface(config, bridge)`. Diagnostics now distinguish Minecraft GUI dimensions, browser viewport dimensions, optional measured framebuffer dimensions, GUI scale, paint callbacks, and `estimatedPaintBytes`; the estimate is explicitly not GPU-upload telemetry.
+
+Automatic frontend and Java validation for this checkpoint passed: `npm ci`, `npm run typecheck`, `npm run build`, `npm run test` (6 tests), `:common:test`, NeoForge tests, `architectureCheck`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets`. `runClient` automatically reached Minecraft startup, MCEF loading, and `Chromium Embedded Framework initialized`. F8 rendering and input interactions remain **NOT VERIFIED** manually, including mouse, wheel, keyboard, clipboard, resize, GUI scale, close/reopen, and Chinese IME (no synthetic IME claim). The common source-set merge debt remains documented and unchanged; Forge implementation remains out of scope.
 
 ## 2. Scope freeze
 
@@ -331,7 +341,7 @@ One clean page showing:
 
 Do not spend Phase 1 building a full visual design system.
 
-Checkpoint result: `@mcwebui/core` implements `connect`, `invoke`, `on`, explicit first-listener/last-listener state subscribe/unsubscribe, request IDs, pending Promise correlation, structured errors, event dispatch, and a private `window.__MCWEBUI_BRIDGE__` transport adapter. `@mcwebui/vue` provides reactive `useMcConnection`, `useMcBridge`, `useMcState`, and `useMcRpc` without reimplementing transport. The playground is a responsive component/runtime showcase and remains the only frontend bundle source of truth. Target identity and diagnostics are fetched from `runtime.diagnostics`; no loader/version is hardcoded in `frontend/**`.
+Checkpoint result: `@mcwebui/core` implements `connect`, `invoke`, `on`, late-bound host resolution, explicit first-listener/last-listener state subscribe/unsubscribe after handshake, request IDs, pending Promise correlation, structured errors, event dispatch, and a private `window.__MCWEBUI_BRIDGE__` transport adapter. `@mcwebui/vue` provides reactive `useMcConnection`, `useMcBridge`, `useMcState`, and `useMcRpc` without reproducing host transport lifecycle. The playground is a responsive component/runtime showcase and remains the only frontend bundle source of truth. Target identity and diagnostics are fetched from `runtime.diagnostics`; no loader/version is hardcoded in `frontend/**`.
 
 ## 12. Build integration
 
@@ -353,7 +363,7 @@ Avoid committed generated `dist/` output unless a later distribution requirement
 
 Checkpoint result: `npm ci`, `npm run typecheck`, and `npm run build` pass locally with Node 22.22.2. Root Gradle tasks `frontendInstall`, `frontendTypecheck`, and `frontendBuild` reuse the root lockfile and stage the shared `frontend/playground/dist` output into the NeoForge JAR. Generated output is ignored.
 
-NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `38777D78B540EC19FB0C6F372FF3AABFF5804CEE14D01B073F46529ADAA31CF8`. The packaged `index.html` (`3812FD857BB4110DA37268253C52B5CB2A0EC973BC734B09DD4840E531EF1057`), JS (`CDBDDE54D577F7B26B313CB804E6E207336E1E99638AC90DC37E666D4427AC39`), and CSS (`B70AB76C3022E19FE560908DC9CEC8232BE0EB6368A2F329987D7AF35BB8117`) hashes match the single `frontend/playground/dist` source. The JAR contains common runtime classes, only the NeoForge adapter, `META-INF/neoforge.mods.toml`, and `web/playground` resources; no Forge adapter, frontend source, or node_modules is packaged.
+NeoForge JAR audit (local): `targets/neoforge-1.21.1/build/libs/neoforge-1.21.1-0.1.0-SNAPSHOT.jar` SHA-256 `231810F018BE19407BFBD4F8879FF036C23BF05FE21D50CDAA8F154451EED5DE`. The packaged `index.html` (`282BC34D11C4A70DC282ADAD56CF62B64EB097DDBA01A7B4F006057F2782D6BD`), JS (`7BEAD8FB82D5A08FC2A675B02D6F340F08ED865BD02EFD08BED979BC724D7FA1`), and CSS (`B70AB76C3022E19FE560908DC9CEC8232BE0EB6368A2F329987D7AF35BB8117`) hashes match the single `frontend/playground/dist` source. The JAR contains common runtime classes exactly once, only the NeoForge adapter, `META-INF/neoforge.mods.toml`, and `web/playground` resources; no Forge adapter, frontend source, or node_modules is packaged.
 
 The long-term parity goal remains a shared logical playground bundle, but this user-directed checkpoint audits and accepts only the NeoForge 1.21.1 JAR; Forge 1.20.1 parity is deferred while its existing structure is preserved.
 
@@ -382,7 +392,7 @@ A full-frame upload implementation is acceptable only as a temporary Phase 1 pat
 
 Do not bake a full-frame-per-Minecraft-frame assumption into public APIs.
 
-Checkpoint result: common `BrowserSurface` remains render-backend neutral and exposes only `FrameMetrics`; the dead `PaintFrame`/listener/uploader path and common texture ID were removed. `NeoForgeRenderableSurface.textureId()` is target-local, and the real MCEF surface subclasses `MCEFBrowser` so native paint callbacks record frame/byte counters while MCEF's renderer uploads the OpenGL texture. A timed `runClient` smoke test reached CEF initialization; no interactive paint/frame sample was captured.
+Checkpoint result: common `BrowserSurface` remains render-backend neutral and exposes only `FrameMetrics`; the dead `PaintFrame`/listener/uploader path and common texture ID were removed. `NeoForgeRenderableSurface.textureId()` is target-local, and the real MCEF surface subclasses `MCEFBrowser` so native paint callbacks record `paintCallbacks` and a clearly named `estimatedPaintBytes` full-frame estimate while MCEF's renderer owns the OpenGL texture path. The estimate is not reported as actual GPU upload bytes. A timed `runClient` smoke test reached CEF initialization; no interactive paint/frame sample was captured.
 
 ## 14. Resize and scale
 
@@ -464,7 +474,7 @@ Before Phase 1 closes, establish commands for:
 
 Target manifest infrastructure may be expanded with lifecycle aliases only when the real loader Gradle plugins are installed, rather than adding fake run tasks during repository bootstrap.
 
-Checkpoint local results: `:common:test`, `:targets:neoforge-1.21.1:test`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets` pass with Gradle 8.13/ModDevGradle 2.0.141. `runClient` reaches NeoForge 1.21.1 startup and MCEF CEF initialization before the timed smoke-test stop. The preserved Forge target's existing Java test task also passes with no tests. These are local Gradle validations, not GitHub CI. `architectureCheck` verifies common has no Minecraft/loader/browser implementation imports and that no target-specific frontend source trees exist.
+Checkpoint local results: `:common:test`, `:targets:neoforge-1.21.1:test`, `testAllTargets`, `compileAllTargets`, and `buildAllTargets` pass with Gradle 8.13/ModDevGradle 2.0.141. `architectureCheck` also passes. `npm run test` passes the delayed-host regression suite alongside `npm ci`, `npm run typecheck`, and `npm run build`. `runClient` reaches NeoForge 1.21.1 startup and MCEF CEF initialization before the timed smoke-test stop. The preserved Forge target's existing Java test task also passes with no tests. These are local Gradle validations, not GitHub CI; F8/input/IME remain not manually verified.
 
 ## 19. Performance baseline
 
@@ -485,7 +495,7 @@ Measure on a documented machine/profile:
 
 Phase 2 performance gates should be derived from these measurements.
 
-Checkpoint result: lightweight `FrameMetrics` counters are present, and the real MCEF surface records paint/upload callbacks without copying full CEF frame buffers into Java. No FPS, memory, paint-rate, or upload-throughput numbers are reported because this run was a timed startup smoke test rather than an interactive benchmark.
+Checkpoint result: lightweight `FrameMetrics` counters are present, and the real MCEF surface records paint callbacks plus a full-frame byte estimate without copying full CEF frame buffers into Java. No FPS, memory, paint-rate, or actual GPU upload-throughput numbers are reported because this run was a timed startup smoke test rather than an interactive benchmark.
 
 ## 20. Commit discipline
 

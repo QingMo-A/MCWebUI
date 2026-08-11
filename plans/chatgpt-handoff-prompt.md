@@ -123,15 +123,16 @@ What currently exists:
 - manifest still retains both NeoForge 1.21.1 and Forge 1.20.1;
 - Forge implementation/runtime parity is intentionally deferred, not removed.
 
-Implementation checkpoint: `4ad22a1` (`wire neoforge browser bridge and showcase`). Documentation checkpoint is recorded in the following commit (`see git history`).
+Implementation checkpoints: `4ad22a1` (`wire neoforge browser bridge and showcase`) and `c494056` (`fix bridge bootstrap lifecycle and runtime acceptance`). The latest implementation closes the late host bootstrap race, makes connection precede host subscriptions, separates WebView READY from browser handshake, and hardens reload/close/session lifecycle. Documentation checkpoint is recorded in the following commit (`see git history`).
 
 Important review findings at this checkpoint:
 
 1. **NeoForge-only implementation is still within the intended bridge model**, because common/frontend semantics remain shared and the Forge target/manifest entry remains preserved. Do not treat “one target implemented first” as a failure by itself.
 2. NeoForge screen/runtime paths are converged: F8 opens `NeoForgeMinecraftScreen`, which delegates lifecycle/input/rendering to one `NeoForgeWebSession`; the former duplicate `NeoForgeWebScreen`/`NeoForgeRuntimeAdapter`/frame uploader paths were removed.
 3. `targets/neoforge-1.21.1/build.gradle` currently adds common Java sources directly to its main source set and also merges the common JAR. Investigate whether ModDevGradle supports a cleaner project/shared-source arrangement, but do not break a working dev runtime merely for aesthetic purity.
-4. The browser host transport is now real: a load hook installs `window.__MCWEBUI_BRIDGE__` only for the configured trusted `mcui://` origin; its `send()` uses JCEF `CefQuery` JSON envelopes and Java events/state are delivered with `executeJavaScript`. Navigation away removes the globals and subscriptions.
-5. Interactive mouse/keyboard/clipboard/resize/GUI-scale/Chinese IME acceptance is explicitly not yet manually runtime verified in the phase plan. `runClient` reached Minecraft startup, MCEF loading, and `Chromium Embedded Framework initialized`.
+4. The browser host transport is now real and late-bound: a load hook installs `window.__MCWEBUI_BRIDGE__` only for the configured trusted `mcui://` origin; its `send()` uses JCEF `CefQuery` JSON envelopes and Java events/state are delivered with `executeJavaScript`. The frontend may start before that global appears, then binds on the private ready event. Navigation away removes globals, queued messages, handshake state, and host subscriptions.
+5. `WebView.initialize()` reaches READY without negotiating browser capabilities. Browser handshake then gates RPC/state operations; host state publication remains legal before connection. `NeoForgeWebSession` initialization is once-only and diagnostics distinguish GUI/viewport/framebuffer dimensions and estimated paint bytes.
+6. Interactive mouse/keyboard/clipboard/resize/GUI-scale/Chinese IME acceptance is explicitly not yet manually runtime verified in the phase plan. `runClient` automatically reached Minecraft startup, MCEF loading, and `Chromium Embedded Framework initialized`; frontend regression tests and Java/Gradle aggregate checks pass locally.
 
 ### Near-term project direction
 

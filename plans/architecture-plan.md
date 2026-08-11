@@ -480,9 +480,15 @@ The NeoForge 1.21.1 vertical slice now uses the official JCEF message-router tra
 
 State subscription is an explicit protocol operation (`subscribe`/`unsubscribe`). The frontend emits subscribe on the first local listener and unsubscribe after the last listener; the target host maps each channel to one `WebBridge` subscription, preserving latest-value semantics and close/reload cleanup.
 
+The frontend transport is deliberately late-bound. A `DefaultMcWebClient` may be constructed before the target installs `window.__MCWEBUI_BRIDGE__`; `DeferredWindowBridgeTransport` resolves the current global at connect/send time, listens for a private ready event, and performs only sparse bounded fallback checks. A local subscription is never sent to the host before handshake, and reconnect replays active channels without duplicate host subscriptions. This keeps the public Vue layer independent of MCEF/JCEF load timing.
+
+`WebView.initialize()` reaching `READY` is not browser handshake. The host may publish authoritative state into its store before a browser connects, while browser-origin RPC and state subscription requests require the capabilities negotiated by `WebBridge.handshake()`. Trusted reload, untrusted navigation, and close reset handshake state, remove bridge globals, release host subscriptions, and discard stale queued messages.
+
 The active target composition is one `NeoForgeMinecraftScreen` -> `NeoForgeWebSession` -> common `WebView`/`WebBridge` -> `NeoForgeMcefBackend` path. Common `BrowserSurface` no longer exposes an OpenGL texture ID, and the old mandatory Java pixel-frame listener/uploader contract was removed because MCEF uploads its native texture directly. NeoForge's `NeoForgeRenderableSurface` owns that target-local capability. `WebView` has no public no-op `dispatchInput`; the browser surface is the input endpoint.
 
 The shared showcase obtains target/backend/version/metrics through the registered `runtime.diagnostics` RPC. Frontend source does not hardcode a loader identity, so a future Forge adapter can provide the same logical shape.
+
+For the NeoForge 1.21.1 adapter, `Screen.resize` was checked against the mapped 21.1.216 source and does not invoke `init`; `NeoForgeWebSession` still treats initialization as once-only and cleans partial failures to prevent duplicate WebViews or MCEF browsers. `BrowserBackend.createSurface` requires a non-null bridge. Paint metrics expose callback counts and an explicitly estimated full-frame byte total; they do not claim actual GPU upload bytes.
 
 ## 18. Initial roadmap
 
