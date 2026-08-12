@@ -2,7 +2,7 @@ package dev.qingmo.mcwebui.backend;
 
 import dev.qingmo.mcwebui.input.WebInputEvent;
 
-public interface BrowserSurface extends AutoCloseable {
+public interface BrowserSurface extends AutoCloseable, BrowserFramePacing {
     int width();
     int height();
     void load(String url);

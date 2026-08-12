@@ -1,0 +1,237 @@
+diff --git a/java/org/cef/browser/CefBrowser.java b/java/org/cef/browser/CefBrowser.java
+index e73bae5..0a3cd23 100644
+--- a/java/org/cef/browser/CefBrowser.java
++++ b/java/org/cef/browser/CefBrowser.java
+@@ -31,6 +31,12 @@ public interface CefBrowser {
+      */
+     public void createImmediately();
+ 
++    /** Request one OSR frame for a browser created with external pacing enabled. */
++    public void sendExternalBeginFrame();
++
++    /** True when this browser was created with CEF external frame pacing enabled. */
++    public boolean supportsExternalBeginFrame();
++
+     /**
+      * Get the client associated with this browser.
+      * @return The browser client.
+diff --git a/java/org/cef/browser/CefBrowserOsr.java b/java/org/cef/browser/CefBrowserOsr.java
+index cd80d9b..9f007d3 100644
+--- a/java/org/cef/browser/CefBrowserOsr.java
++++ b/java/org/cef/browser/CefBrowserOsr.java
+@@ -33,12 +33,19 @@ public class CefBrowserOsr extends CefBrowser_N implements CefRenderHandler {
+     private boolean isTransparent_;
+ 
+     public CefBrowserOsr(CefClient client, String url, boolean transparent, CefRequestContext context) {
+-        this(client, url, transparent, context, null, null);
++        this(client, url, transparent, context, false, null, null);
++    }
++
++    /** Proof-only constructor; stock callers keep external pacing disabled. */
++    public CefBrowserOsr(CefClient client, String url, boolean transparent,
++            CefRequestContext context, boolean externalBeginFrameEnabled) {
++        this(client, url, transparent, context, externalBeginFrameEnabled, null, null);
+     }
+ 
+     private CefBrowserOsr(CefClient client, String url, boolean transparent,
+-            CefRequestContext context, CefBrowserOsr parent, Point inspectAt) {
+-        super(client, url, context, parent, inspectAt);
++            CefRequestContext context, boolean externalBeginFrameEnabled,
++            CefBrowserOsr parent, Point inspectAt) {
++        super(client, url, context, parent, inspectAt, externalBeginFrameEnabled);
+         isTransparent_ = transparent;
+     }
+ 
+diff --git a/java/org/cef/browser/CefBrowser_N.java b/java/org/cef/browser/CefBrowser_N.java
+index 6c3749f..04a1a57 100644
+--- a/java/org/cef/browser/CefBrowser_N.java
++++ b/java/org/cef/browser/CefBrowser_N.java
+@@ -47,14 +47,16 @@ public abstract class CefBrowser_N extends CefNativeAdapter implements CefBrowse
+     private boolean closeAllowed_ = false;
+     private volatile boolean isClosed_ = false;
+     private volatile boolean isClosing_ = false;
++    private final boolean externalBeginFrameEnabled_;
+ 
+     protected CefBrowser_N(CefClient client, String url, CefRequestContext context,
+-            CefBrowser_N parent, Point inspectAt) {
++            CefBrowser_N parent, Point inspectAt, boolean externalBeginFrameEnabled) {
+         client_ = client;
+         url_ = url;
+         request_context_ = context;
+         parent_ = parent;
+         inspectAt_ = inspectAt;
++        externalBeginFrameEnabled_ = externalBeginFrameEnabled;
+     }
+ 
+     protected String getUrl() {
+@@ -142,8 +144,8 @@ public abstract class CefBrowser_N extends CefNativeAdapter implements CefBrowse
+             boolean osr, boolean transparent, CefRequestContext context) {
+         if (getNativeRef("CefBrowser") == 0 && !isPending_) {
+             try {
+-                N_CreateBrowser(
+-                        clientHandler, windowHandle, url, osr, transparent, context);
++                N_CreateBrowser(clientHandler, windowHandle, url, osr, transparent,
++                        externalBeginFrameEnabled_, context);
+             } catch (UnsatisfiedLinkError err) {
+                 err.printStackTrace();
+             }
+@@ -578,6 +580,17 @@ public abstract class CefBrowser_N extends CefNativeAdapter implements CefBrowse
+         }
+     }
+ 
++    @Override
++    public final void sendExternalBeginFrame() {
++        if (!externalBeginFrameEnabled_) return;
++        N_SendExternalBeginFrame();
++    }
++
++    @Override
++    public final boolean supportsExternalBeginFrame() {
++        return externalBeginFrameEnabled_ && N_SupportsExternalBeginFrame();
++    }
++
+     /**
+      * Send a key event.
+      * @param e The event to send.
+@@ -730,7 +743,7 @@ public abstract class CefBrowser_N extends CefNativeAdapter implements CefBrowse
+ 
+     private final native boolean N_CreateBrowser(CefClientHandler clientHandler, long windowHandle,
+             String url, boolean osr, boolean transparent,
+-            CefRequestContext context);
++            boolean externalBeginFrameEnabled, CefRequestContext context);
+     private final native boolean N_CreateDevTools(CefBrowser parent, CefClientHandler clientHandler,
+             long windowHandle, boolean osr, boolean transparent, Point inspectAt);
+     private final native long N_GetWindowHandle(long surfaceHandle);
+@@ -778,6 +791,8 @@ public abstract class CefBrowser_N extends CefNativeAdapter implements CefBrowse
+     private final native void N_ReplaceMisspelling(String word);
+     private final native void N_WasResized(int width, int height);
+     private final native void N_Invalidate();
++    private final native void N_SendExternalBeginFrame();
++    private final native boolean N_SupportsExternalBeginFrame();
+     private final native void N_SendKeyEvent(CefKeyEvent e);
+     private final native void N_SendMouseEvent(CefMouseEvent e);
+     private final native void N_SendMouseWheelEvent(CefMouseWheelEvent e);
+diff --git a/native/CefBrowser_N.cpp b/native/CefBrowser_N.cpp
+index af6543b..eeddc48 100644
+--- a/native/CefBrowser_N.cpp
++++ b/native/CefBrowser_N.cpp
+@@ -989,7 +989,8 @@ struct JNIObjectsForCreate {
+ void create(std::shared_ptr<JNIObjectsForCreate> objs,
+             jlong windowHandle,
+             jboolean osr,
+-            jboolean transparent) {
++            jboolean transparent,
++            jboolean externalBeginFrameEnabled) {
+   ScopedJNIEnv env;
+   CefRefPtr<ClientHandler> clientHandler = GetCefFromJNIObject<ClientHandler>(
+       env, objs->jclientHandler, "CefClientHandler");
+@@ -1003,6 +1004,9 @@ void create(std::shared_ptr<JNIObjectsForCreate> objs,
+ 
+   CefWindowInfo windowInfo;
+   windowInfo.SetAsWindowless((CefWindowHandle)windowHandle);
++  if (externalBeginFrameEnabled != JNI_FALSE) {
++    windowInfo.external_begin_frame_enabled = true;
++  }
+ 
+   CefBrowserSettings settings;
+ 
+@@ -1182,14 +1186,16 @@ Java_org_cef_browser_CefBrowser_1N_N_1CreateBrowser(JNIEnv* env,
+                                                     jstring url,
+                                                     jboolean osr,
+                                                     jboolean transparent,
++                                                    jboolean externalBeginFrameEnabled,
+                                                     jobject jcontext) {
+   std::shared_ptr<JNIObjectsForCreate> objs(new JNIObjectsForCreate(
+       env, jbrowser, nullptr, jclientHandler, url, jcontext, nullptr));
+   if (CefCurrentlyOn(TID_UI)) {
+-    create(objs, windowHandle, osr, transparent);
++    create(objs, windowHandle, osr, transparent, externalBeginFrameEnabled);
+   } else {
+     CefPostTask(TID_UI,
+-                base::BindOnce(&create, objs, windowHandle, osr, transparent));
++                base::BindOnce(&create, objs, windowHandle, osr, transparent,
++                               externalBeginFrameEnabled));
+   }
+   return JNI_FALSE;  // set asynchronously
+ }
+@@ -1207,10 +1213,11 @@ Java_org_cef_browser_CefBrowser_1N_N_1CreateDevTools(JNIEnv* env,
+       new JNIObjectsForCreate(env, jbrowser, jparent, jclientHandler, nullptr,
+                               nullptr, inspect));
+   if (CefCurrentlyOn(TID_UI)) {
+-    create(objs, windowHandle, osr, transparent);
++    create(objs, windowHandle, osr, transparent, JNI_FALSE);
+   } else {
+     CefPostTask(TID_UI,
+-                base::BindOnce(&create, objs, windowHandle, osr, transparent));
++                base::BindOnce(&create, objs, windowHandle, osr, transparent,
++                               JNI_FALSE));
+   }
+   return JNI_FALSE;  // set asynchronously
+ }
+@@ -1627,6 +1634,31 @@ Java_org_cef_browser_CefBrowser_1N_N_1Invalidate(JNIEnv* env, jobject obj) {
+   browser->GetHost()->Invalidate(PET_VIEW);
+ }
+ 
++JNIEXPORT void JNICALL
++Java_org_cef_browser_CefBrowser_1N_N_1SendExternalBeginFrame(JNIEnv* env,
++                                                              jobject obj) {
++  CefRefPtr<CefBrowser> browser = JNI_GET_BROWSER_OR_RETURN(env, obj);
++  CefRefPtr<CefBrowserHost> host = browser->GetHost();
++  if (!host) return;
++  if (CefCurrentlyOn(TID_UI)) {
++    host->SendExternalBeginFrame();
++  } else {
++    CefPostTask(TID_UI, base::BindOnce(
++                           [](CefRefPtr<CefBrowserHost> postedHost) {
++                             if (postedHost) postedHost->SendExternalBeginFrame();
++                           },
++                           host));
++  }
++}
++
++JNIEXPORT jboolean JNICALL
++Java_org_cef_browser_CefBrowser_1N_N_1SupportsExternalBeginFrame(JNIEnv* env,
++                                                                     jobject obj) {
++  CefRefPtr<CefBrowser> browser =
++      JNI_GET_BROWSER_OR_RETURN(env, obj, JNI_FALSE);
++  return JNI_TRUE;
++}
++
+ JNIEXPORT void JNICALL
+ Java_org_cef_browser_CefBrowser_1N_N_1SendKeyEvent(JNIEnv* env,
+                                                    jobject obj,
+diff --git a/native/CefBrowser_N.h b/native/CefBrowser_N.h
+index bd0fd0d..40a3578 100644
+--- a/native/CefBrowser_N.h
++++ b/native/CefBrowser_N.h
+@@ -21,6 +21,7 @@ Java_org_cef_browser_CefBrowser_1N_N_1CreateBrowser(JNIEnv*,
+                                                     jstring,
+                                                     jboolean,
+                                                     jboolean,
++                                                    jboolean,
+                                                     jobject);
+ 
+ /*
+@@ -399,6 +400,22 @@ JNIEXPORT void JNICALL Java_org_cef_browser_CefBrowser_1N_N_1WasResized(JNIEnv*,
+ JNIEXPORT void JNICALL
+ Java_org_cef_browser_CefBrowser_1N_N_1Invalidate(JNIEnv*, jobject);
+ 
++/*
++ * Class:     org_cef_browser_CefBrowser_N
++ * Method:    N_SendExternalBeginFrame
++ * Signature: ()V
++ */
++JNIEXPORT void JNICALL
++Java_org_cef_browser_CefBrowser_1N_N_1SendExternalBeginFrame(JNIEnv*, jobject);
++
++/*
++ * Class:     org_cef_browser_CefBrowser_N
++ * Method:    N_SupportsExternalBeginFrame
++ * Signature: ()Z
++ */
++JNIEXPORT jboolean JNICALL
++Java_org_cef_browser_CefBrowser_1N_N_1SupportsExternalBeginFrame(JNIEnv*, jobject);
++
+ /*
+  * Class:     org_cef_browser_CefBrowser_N
+  * Method:    N_SendKeyEvent

@@ -8,19 +8,62 @@ java {
     }
 }
 
+def framePacingProof = providers.gradleProperty('mcwebuiFramePacingProof').map { it.toBoolean() }.orElse(false)
+
 sourceSets {
     main {
         java.srcDir(rootProject.file('common/src/main/java'))
         resources.srcDir(rootProject.file('common/src/main/resources'))
+        if (framePacingProof.get()) {
+            java.srcDir('src/framePacingProof/java')
+        } else {
+            java.srcDir('src/stock/java')
+        }
     }
 }
 
 dependencies {
     implementation 'net.neoforged:neoforge:21.1.216'
-    compileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
-    runtimeOnly 'com.cinemamod:mcef-neoforge:2.1.6-1.21.1'
-    testCompileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+}
+
+if (framePacingProof.get()) {
+    def patchedMcefJar = providers.environmentVariable('MCWEBUI_PATCHED_MCEF_JAR').orNull
+    def patchedNativeDir = providers.environmentVariable('MCWEBUI_PATCHED_NATIVE_DIR').orNull
+    def patchedNativeName = providers.environmentVariable('MCWEBUI_PATCHED_NATIVE_NAME').orElse('jcef.dll').get()
+    def patchedMcefSha = providers.environmentVariable('MCWEBUI_PATCHED_MCEF_SHA256').orNull
+    def patchedNativeSha = providers.environmentVariable('MCWEBUI_PATCHED_JCEF_SHA256').orNull
+    if (patchedMcefJar == null || !file(patchedMcefJar).isFile()) {
+        throw new GradleException('mcwebuiFramePacingProof=true requires MCWEBUI_PATCHED_MCEF_JAR to point to a matched patched MCEF jar (JCEF+MCEF patches under native/patches).')
+    }
+    if (patchedNativeDir == null ||
+            !file(patchedNativeDir, 'windows_amd64/' + patchedNativeName).isFile() ||
+            !file(patchedNativeDir, 'windows_amd64/libcef.dll').isFile()) {
+        throw new GradleException("mcwebuiFramePacingProof=true requires MCWEBUI_PATCHED_NATIVE_DIR/windows_amd64 to contain $patchedNativeName and its matching CEF runtime siblings.")
+    }
+    if (patchedMcefSha == null || patchedNativeSha == null) {
+        throw new GradleException('Proof mode requires MCWEBUI_PATCHED_MCEF_SHA256 and MCWEBUI_PATCHED_JCEF_SHA256 so Java/native revisions cannot be mixed.')
+    }
+    def sha256 = { File input -> java.security.MessageDigest.getInstance('SHA-256').digest(input.bytes).encodeHex().toString().toUpperCase(Locale.ROOT) }
+    def actualMcefSha = sha256(file(patchedMcefJar))
+    def actualNativeSha = sha256(file(patchedNativeDir, 'windows_amd64/' + patchedNativeName))
+    if (!actualMcefSha.equalsIgnoreCase(patchedMcefSha) || !actualNativeSha.equalsIgnoreCase(patchedNativeSha)) {
+        throw new GradleException("Proof artifact SHA-256 mismatch (MCEF=$actualMcefSha, JCEF=$actualNativeSha). Refusing to mix unmatched Java/native artifacts.")
+    }
+    dependencies {
+        compileOnly files(patchedMcefJar)
+        runtimeOnly files(patchedMcefJar)
+        testCompileOnly files(patchedMcefJar)
+    }
+    tasks.withType(JavaExec).configureEach {
+        jvmArgs "-Dmcwebui.framePacingProof=true", "-Dmcwebui.mcef.proof.nativeDir=${file(patchedNativeDir, 'windows_amd64').absolutePath}"
+    }
+} else {
+    dependencies {
+        compileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
+        runtimeOnly 'com.cinemamod:mcef-neoforge:2.1.6-1.21.1'
+        testCompileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
+    }
 }
 
 neoForge {

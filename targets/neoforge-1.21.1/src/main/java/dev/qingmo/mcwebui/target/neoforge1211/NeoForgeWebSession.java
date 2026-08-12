@@ -36,6 +36,7 @@ final class NeoForgeWebSession implements AutoCloseable {
     private boolean followGuiSize = true;
     private boolean initialized;
     private volatile boolean closed;
+    private volatile boolean visible;
 
     NeoForgeWebSession(BridgeDispatcher dispatcher, NeoForgeDemoBridge demo) {
         Objects.requireNonNull(dispatcher, "dispatcher");
@@ -68,6 +69,7 @@ final class NeoForgeWebSession implements AutoCloseable {
             view.initialize();
             surface = (NeoForgeRenderableSurface) backend.createSurface(view.config(), view.bridge());
             view.setVisible(true);
+            visible = true;
             view.focus(true);
             surface.resize(width, height);
             surface.load("mcui://" + PLAYGROUND_HOST + "/index.html");
@@ -111,6 +113,12 @@ final class NeoForgeWebSession implements AutoCloseable {
     }
 
     NeoForgeRenderableSurface surface() { return surface; }
+    void beginFrame(long frameTimeNanos) {
+        if (shouldBeginFrame(closed, visible, view == null ? null : view.state().lifecycle(), surface != null)) {
+            surface.metrics().recordGameSignal();
+            surface.requestExternalFrame();
+        }
+    }
     boolean isClosed() { return closed; }
 
     private void input(dev.qingmo.mcwebui.input.WebInputEvent event) {
@@ -131,11 +139,21 @@ final class NeoForgeWebSession implements AutoCloseable {
         info.put("browserViewportHeight", surface == null ? 0 : surface.height());
         info.put("followGuiSize", followGuiSize);
         info.put("viewportMode", followGuiSize ? "GUI" : "FRAMEBUFFER");
+        info.put("externalFramePacing", surface != null && surface.supportsExternalFrames());
+        boolean externalPacing = surface != null && surface.supportsExternalFrames();
+        info.put("frameMode", externalPacing ? "GAME_SYNC" : "BACKEND_DEFAULT");
+        info.put("framePacingCapability", externalPacing ? "EXTERNAL_BEGIN_FRAME" : "UNSUPPORTED");
+        info.put("proofRuntime", externalPacing ? "PATCHED" : "STOCK");
         info.put("guiScale", guiScale);
         info.put("paintCallbacks", surface == null ? 0L : surface.metrics().paintCallbacks());
         info.put("framebufferWidth", surface == null ? 0 : surface.metrics().width());
         info.put("framebufferHeight", surface == null ? 0 : surface.metrics().height());
         info.put("estimatedPaintBytes", surface == null ? 0L : surface.metrics().estimatedPaintBytes());
+        info.put("paintRateHz", surface == null ? 0.0 : surface.metrics().paintRateHz());
+        info.put("gameSignals", surface == null ? 0L : surface.metrics().gameSignals());
+        info.put("externalFrameRequests", surface == null ? 0L : surface.metrics().externalRequests());
+        info.put("gameSignalsPerSecond", surface == null ? 0.0 : surface.metrics().gameSignalRateHz());
+        info.put("externalBeginFramesPerSecond", surface == null ? 0.0 : surface.metrics().externalRequestRateHz());
         info.put("viewState", view == null ? "CLOSED" : view.state().lifecycle().name());
         info.put("sessionState", closed ? "CLOSED" : "ACTIVE");
         return Map.copyOf(info);
@@ -157,6 +175,12 @@ final class NeoForgeWebSession implements AutoCloseable {
         if (guiSize < 1 || browserSize < 1) throw new IllegalArgumentException("coordinate spaces must be positive");
         return guiCoordinate * browserSize / (double) guiSize;
     }
+    static boolean shouldBeginFrame(boolean closed, boolean visible,
+                                    dev.qingmo.mcwebui.runtime.WebViewLifecycle lifecycle,
+                                    boolean surfacePresent) {
+        return !closed && visible && surfacePresent
+                && lifecycle == dev.qingmo.mcwebui.runtime.WebViewLifecycle.VISIBLE;
+    }
     private static int requireDimension(int value, String name) {
         if (value < 1) throw new IllegalArgumentException(name + " must be positive");
         return value;
@@ -170,6 +194,7 @@ final class NeoForgeWebSession implements AutoCloseable {
         if (closed) return;
         closed = true;
         if (view != null) view.setVisible(false);
+        visible = false;
         if (surface != null) surface.close();
         if (view != null) {
             demo.removeBridge(view.bridge());

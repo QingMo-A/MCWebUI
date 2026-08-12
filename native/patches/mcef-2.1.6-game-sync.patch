@@ -1,0 +1,108 @@
+diff --git a/common/src/main/java/com/cinemamod/mcef/MCEF.java b/common/src/main/java/com/cinemamod/mcef/MCEF.java
+index 21eb553..6e2b66f 100644
+--- a/common/src/main/java/com/cinemamod/mcef/MCEF.java
++++ b/common/src/main/java/com/cinemamod/mcef/MCEF.java
+@@ -134,8 +134,14 @@ public final class MCEF {
+      * @return the {@link MCEFBrowser} web browser instance
+      */
+     public static MCEFBrowser createBrowser(String url, boolean transparent) {
++        return createBrowser(url, transparent, false);
++    }
++
++    /** Proof-only overload; false preserves MCEF's stock frame scheduling. */
++    public static MCEFBrowser createBrowser(String url, boolean transparent,
++                                            boolean externalBeginFrameEnabled) {
+         assertInitialized();
+-        MCEFBrowser browser = new MCEFBrowser(client, url, transparent);
++        MCEFBrowser browser = new MCEFBrowser(client, url, transparent, externalBeginFrameEnabled);
+         browser.setCloseAllowed();
+         browser.createImmediately();
+         return browser;
+@@ -148,8 +154,14 @@ public final class MCEF {
+      * @return the {@link MCEFBrowser} web browser instance
+      */
+     public static MCEFBrowser createBrowser(String url, boolean transparent, int width, int height) {
++        return createBrowser(url, transparent, width, height, false);
++    }
++
++    /** Proof-only sized overload; false preserves MCEF's stock frame scheduling. */
++    public static MCEFBrowser createBrowser(String url, boolean transparent, int width, int height,
++                                            boolean externalBeginFrameEnabled) {
+         assertInitialized();
+-        MCEFBrowser browser = new MCEFBrowser(client, url, transparent);
++        MCEFBrowser browser = new MCEFBrowser(client, url, transparent, externalBeginFrameEnabled);
+         browser.setCloseAllowed();
+         browser.createImmediately();
+         browser.resize(width, height);
+diff --git a/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java b/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java
+index 828b795..0ce2a56 100644
+--- a/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java
++++ b/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java
+@@ -85,13 +85,29 @@ public class MCEFBrowser extends CefBrowserOsr {
+     protected boolean popupDrawn = false;
+ 
+     public MCEFBrowser(MCEFClient client, String url, boolean transparent) {
+-        super(client.getHandle(), url, transparent, null);
++        this(client, url, transparent, false);
++    }
++
++    /** Optional proof-mode constructor; false preserves stock frame scheduling. */
++    public MCEFBrowser(MCEFClient client, String url, boolean transparent,
++                       boolean externalBeginFrameEnabled) {
++        super(client.getHandle(), url, transparent, null, externalBeginFrameEnabled);
+         renderer = new MCEFRenderer(transparent);
+         cursorChangeListener = (cefCursorID) -> setCursor(CefCursorType.fromId(cefCursorID));
+ 
+         Minecraft.getInstance().submit(renderer::initialize);
+     }
+ 
++    /** Request a frame from CEF when this browser was created in proof mode. */
++    public void sendExternalBeginFrame() {
++        super.sendExternalBeginFrame();
++    }
++
++    /** Expose the JCEF capability without relying on reflection. */
++    public boolean supportsExternalBeginFrame() {
++        return super.supportsExternalBeginFrame();
++    }
++
+     public MCEFRenderer getRenderer() {
+         return renderer;
+     }
+diff --git a/common/src/main/java/com/cinemamod/mcef/mixins/CefDownloadMixin.java b/common/src/main/java/com/cinemamod/mcef/mixins/CefDownloadMixin.java
+index 2d92cd4..c51e652 100644
+--- a/common/src/main/java/com/cinemamod/mcef/mixins/CefDownloadMixin.java
++++ b/common/src/main/java/com/cinemamod/mcef/mixins/CefDownloadMixin.java
+@@ -49,6 +49,17 @@ import java.io.IOException;
+ public class CefDownloadMixin {
+     @Unique
+     private static void setupLibraryPath() throws IOException {
++        String proofNativeDir = System.getProperty("mcwebui.mcef.proof.nativeDir", "").trim();
++        if (!proofNativeDir.isEmpty()) {
++            File platformDir = new File(proofNativeDir).getCanonicalFile();
++            if (!new File(platformDir, "jcef.dll").isFile()
++                    || !new File(platformDir, "libcef.dll").isFile()) {
++                throw new IOException("Proof native directory is missing jcef.dll or libcef.dll: " + platformDir);
++            }
++            System.setProperty("mcef.libraries.path", platformDir.getParentFile().getCanonicalPath());
++            System.setProperty("jcef.path", platformDir.getCanonicalPath());
++            return;
++        }
+         final File mcefLibrariesDir;
+ 
+         // Check for development environment
+@@ -72,7 +83,13 @@ public class CefDownloadMixin {
+         try {
+             setupLibraryPath();
+         } catch (IOException e) {
+-            e.printStackTrace();
++            throw new IllegalStateException("Unable to configure MCEF libraries", e);
++        }
++
++        if (!System.getProperty("mcwebui.mcef.proof.nativeDir", "").trim().isEmpty()) {
++            MCEF.getLogger().info("Using MCWebUI proof JCEF directory: " + System.getProperty("jcef.path"));
++            MCEFDownloadListener.INSTANCE.setDone(true);
++            return;
+         }
+ 
+         Thread downloadThread = new Thread(() -> {

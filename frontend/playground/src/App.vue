@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { McBridgeError } from "@mcwebui/core";
+import { McBridgeError, createFramePacer, type FramePacer } from "@mcwebui/core";
 import { useMcRpc, useMcState } from "@mcwebui/vue";
 
 const { client, state: connectionState, error: connectionError, connected, invoke } = useMcRpc();
@@ -30,11 +30,18 @@ const showModal = ref(false);
 const toast = ref("");
 const loading = ref(false);
 const diagnostics = ref<Record<string, unknown>>({});
+const rafFrames = ref(0);
+const rafRunning = ref(false);
+const rafRateHz = ref(0);
+const rafPhase = ref(0);
 const scrollItems = Array.from({ length: 14 }, (_, index) => ({
   title: `Runtime signal ${String(index + 1).padStart(2, "0")}`,
   detail: index % 2 ? "state channel is idle" : "paint observer is ready",
 }));
 let toastTimer: number | undefined;
+let framePacer: FramePacer | undefined;
+let rafWindowStart = 0;
+let rafWindowFrames = 0;
 
 const statusLabel = computed(() => ({ disconnected: "Disconnected", connecting: "Connecting", connected: "Connected", error: "Error" }[connectionState.value]));
 const statusClass = computed(() => `status-${connectionState.value}`);
@@ -72,6 +79,22 @@ async function refreshDiagnostics() {
   if (!connected.value) return;
   try { diagnostics.value = await invoke<Record<string, unknown>>("runtime.diagnostics", {}); }
   catch (cause) { setError(cause); }
+}
+function toggleRafProbe() {
+  if (!framePacer) framePacer = createFramePacer(() => {
+    rafFrames.value++;
+    rafPhase.value = (rafPhase.value + 2.5) % 100;
+    rafWindowFrames++;
+    const now = performance.now();
+    if (!rafWindowStart) rafWindowStart = now;
+    if (now - rafWindowStart >= 1000) {
+      rafRateHz.value = rafWindowFrames * 1000 / (now - rafWindowStart);
+      rafWindowStart = now;
+      rafWindowFrames = 0;
+    }
+  });
+  if (rafRunning.value) { framePacer.stop(); rafRunning.value = false; }
+  else { framePacer.start(); rafRunning.value = true; }
 }
 function setError(cause: unknown) {
   if (cause instanceof McBridgeError) bridgeError.value = { code: cause.code, message: cause.message };
@@ -116,6 +139,11 @@ onBeforeUnmount(() => {
   document.removeEventListener("pointerdown", closeSelectOnOutside);
   document.removeEventListener("keydown", closeSelectOnEscape);
   if (toastTimer) window.clearTimeout(toastTimer);
+  framePacer?.stop();
+  framePacer = undefined;
+  rafWindowStart = 0;
+  rafWindowFrames = 0;
+  rafRateHz.value = 0;
 });
 </script>
 
@@ -174,8 +202,14 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else-if="activeTab === 'runtime'">
-          <div class="section-heading page-heading"><div><p class="eyebrow">Target adapter telemetry</p><h2>Runtime diagnostics</h2><p class="muted">Sampled on connect, when opened, or when you request a refresh.</p></div><button class="button secondary" @click="refreshDiagnostics">Refresh now</button></div>
-          <article class="panel diagnostics-panel"><div class="diagnostics-grid"><div v-for="row in runtimeRows" :key="row[0]" class="diagnostic-cell"><span>{{ row[0] }}</span><strong>{{ row[1] }}</strong></div></div><div class="diagnostics-grid secondary-grid"><div class="diagnostic-cell"><span>Paint callbacks</span><strong>{{ diagnostics.paintCallbacks ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Estimated paint bytes</span><strong>{{ diagnostics.estimatedPaintBytes ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Framebuffer</span><strong>{{ diagnostics.framebufferWidth ? `${diagnostics.framebufferWidth} × ${diagnostics.framebufferHeight} px` : "—" }}</strong></div><div class="diagnostic-cell"><span>View state</span><strong>{{ diagnostics.viewState ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Session state</span><strong>{{ diagnostics.sessionState ?? "—" }}</strong></div></div></article>
+          <div class="section-heading page-heading"><div><p class="eyebrow">Target adapter telemetry</p><h2>Runtime diagnostics</h2><p class="muted">Sampled on connect, when opened, or when you request a refresh.</p></div><div class="button-row"><button class="button secondary" @click="refreshDiagnostics">Refresh now</button><button class="button secondary" @click="toggleRafProbe">{{ rafRunning ? 'Stop rAF probe' : 'Start rAF probe' }}</button></div></div>
+          <article class="panel diagnostics-panel">
+            <div class="raf-stage" :class="{ running: rafRunning }" aria-label="requestAnimationFrame visual probe"><span :style="{ transform: `translateX(${rafPhase}%)` }"></span></div>
+            <div class="diagnostics-grid"><div v-for="row in runtimeRows" :key="row[0]" class="diagnostic-cell"><span>{{ row[0] }}</span><strong>{{ row[1] }}</strong></div></div>
+            <div class="diagnostics-grid secondary-grid">
+              <div class="diagnostic-cell"><span>Frame mode</span><strong>{{ diagnostics.frameMode ?? "BACKEND_DEFAULT" }}</strong></div><div class="diagnostic-cell"><span>Proof runtime</span><strong>{{ diagnostics.proofRuntime ?? "STOCK" }}</strong></div><div class="diagnostic-cell"><span>Game render signals/s</span><strong>{{ Number(diagnostics.gameSignalsPerSecond ?? 0).toFixed(1) }} Hz</strong></div><div class="diagnostic-cell"><span>External BeginFrames/s</span><strong>{{ Number(diagnostics.externalBeginFramesPerSecond ?? 0).toFixed(1) }} Hz</strong></div><div class="diagnostic-cell"><span>Browser rAF rate</span><strong>{{ rafRateHz.toFixed(1) }} Hz</strong></div><div class="diagnostic-cell"><span>Browser rAF callbacks</span><strong>{{ rafFrames }}</strong></div><div class="diagnostic-cell"><span>Paint callbacks</span><strong>{{ diagnostics.paintCallbacks ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Paint rate</span><strong>{{ diagnostics.paintRateHz ? `${Number(diagnostics.paintRateHz).toFixed(1)} Hz` : "—" }}</strong></div><div class="diagnostic-cell"><span>Estimated paint bytes</span><strong>{{ diagnostics.estimatedPaintBytes ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Frame capability</span><strong>{{ diagnostics.externalFramePacing ? "EXTERNAL_BEGIN_FRAME" : "UNSUPPORTED" }}</strong></div><div class="diagnostic-cell"><span>Framebuffer</span><strong>{{ diagnostics.framebufferWidth ? `${diagnostics.framebufferWidth} × ${diagnostics.framebufferHeight} px` : "—" }}</strong></div><div class="diagnostic-cell"><span>View state</span><strong>{{ diagnostics.viewState ?? "—" }}</strong></div><div class="diagnostic-cell"><span>Session state</span><strong>{{ diagnostics.sessionState ?? "—" }}</strong></div>
+            </div>
+          </article>
         </template>
 
         <template v-else>

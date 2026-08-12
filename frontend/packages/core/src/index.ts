@@ -1,3 +1,5 @@
+export * from "./frame-pacing";
+
 export type BridgeCapability = "HANDSHAKE" | "RPC" | "EVENTS" | "STATE" | "INPUT" | "CLIPBOARD";
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 

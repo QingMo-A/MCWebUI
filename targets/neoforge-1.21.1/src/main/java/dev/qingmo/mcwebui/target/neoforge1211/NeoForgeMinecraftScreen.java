@@ -36,6 +36,9 @@ public final class NeoForgeMinecraftScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
         NeoForgeRenderableSurface surface = session.surface();
         if (surface == null) return;
+        // One active, visible host render gives an opt-in backend at most one
+        // non-blocking begin-frame opportunity. Stock MCEF remains callback-driven.
+        session.beginFrame(System.nanoTime());
         int textureId = surface.textureId();
         // MCEF exposes texture id 0 until its render-thread initialization has completed;
         // binding it would draw the default texture and make the screen look permanently blank.

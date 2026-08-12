@@ -1,9 +1,7 @@
 package dev.qingmo.mcwebui.target.neoforge1211;
 
 import com.cinemamod.mcef.MCEF;
-import com.cinemamod.mcef.MCEFBrowser;
 import dev.qingmo.mcwebui.backend.BrowserBackend;
-import dev.qingmo.mcwebui.backend.BrowserSurface;
 import dev.qingmo.mcwebui.backend.FrameMetrics;
 import dev.qingmo.mcwebui.bridge.BridgeCapability;
 import dev.qingmo.mcwebui.bridge.BridgeCodec;
@@ -30,8 +28,6 @@ import org.cef.callback.CefQueryCallback;
 import org.cef.handler.CefLoadHandler;
 import org.cef.handler.CefMessageRouterHandlerAdapter;
 
-import java.awt.Rectangle;
-import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.Map;
 import java.util.Objects;
@@ -82,7 +78,7 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
         private final WebViewConfig config;
         private final FrameMetrics metrics = new FrameMetrics();
         private final BridgeHost host;
-        private final InstrumentedMcefBrowser browser;
+        private final FramePacingMcefBrowser browser;
         private volatile int width;
         private volatile int height;
         private volatile boolean closed;
@@ -95,7 +91,7 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
             // The browser surface is composited as a full-screen opaque quad. Avoiding the
             // transparent OSR compositing path skips unnecessary alpha blending work for every
             // paint/upload; page overlays are already composited inside CEF.
-            this.browser = new InstrumentedMcefBrowser(url, false, metrics);
+            this.browser = new FramePacingMcefBrowser(url, false, metrics);
             SURFACES.put(browser, this);
             this.browser.resize(width, height);
         }
@@ -134,6 +130,17 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
         }
         @Override public FrameMetrics metrics() { return metrics; }
         @Override public int textureId() { return browser.getRenderer().getTextureID(); }
+        @Override public boolean supportsExternalFrames() {
+            // Stock MCEF 2.1.6 has no supported external-frame Java API. A
+            // patched proof subclass may override this method when its matched
+            // JCEF/MCEF artifact is selected at build time.
+            return browser.supportsExternalFrames();
+        }
+        @Override public boolean requestExternalFrame() {
+            if (!supportsExternalFrames()) return false;
+            metrics.recordExternalRequest();
+            return browser.requestExternalFrame();
+        }
         @Override public void close() {
             if (closed) return;
             closed = true;
@@ -152,24 +159,6 @@ public final class NeoForgeMcefBackend implements BrowserBackend {
         }
 
         private void ensureOpen() { if (closed) throw new IllegalStateException("Browser surface is closed"); }
-    }
-
-    /** Target-local rendering capability; common BrowserSurface intentionally has no texture identity. */
-    private static final class InstrumentedMcefBrowser extends MCEFBrowser {
-        private final FrameMetrics metrics;
-        private InstrumentedMcefBrowser(String url, boolean transparent, FrameMetrics metrics) {
-            super(MCEF.getClient(), url, transparent);
-            this.metrics = metrics;
-            setCloseAllowed();
-            createImmediately();
-        }
-        @Override
-        public void onPaint(CefBrowser browser, boolean popup, Rectangle[] dirtyRects, ByteBuffer buffer, int width, int height) {
-            super.onPaint(browser, popup, dirtyRects, buffer, width, height);
-            if (!popup) {
-                metrics.recordPaint(width, height);
-            }
-        }
     }
 
     private static final class RouterHandler extends CefMessageRouterHandlerAdapter {

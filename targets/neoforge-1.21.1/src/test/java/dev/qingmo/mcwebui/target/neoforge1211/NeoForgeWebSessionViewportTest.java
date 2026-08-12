@@ -1,11 +1,22 @@
 package dev.qingmo.mcwebui.target.neoforge1211;
 
 import org.junit.jupiter.api.Test;
+import dev.qingmo.mcwebui.runtime.WebViewLifecycle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Locks the GUI-coordinate contract used by the browser surface and Screen input routing. */
 class NeoForgeWebSessionViewportTest {
+    @Test
+    void externalFrameOpportunityRequiresVisibleActiveSurface() {
+        assertTrue(NeoForgeWebSession.shouldBeginFrame(false, true, WebViewLifecycle.VISIBLE, true));
+        assertFalse(NeoForgeWebSession.shouldBeginFrame(false, false, WebViewLifecycle.VISIBLE, true));
+        assertFalse(NeoForgeWebSession.shouldBeginFrame(false, true, WebViewLifecycle.HIDDEN, true));
+        assertFalse(NeoForgeWebSession.shouldBeginFrame(true, true, WebViewLifecycle.VISIBLE, true));
+        assertFalse(NeoForgeWebSession.shouldBeginFrame(false, true, WebViewLifecycle.VISIBLE, false));
+    }
     @Test
     void browserViewportSupportsGuiAndFramebufferDensity() {
         int guiWidth = 1280;
