@@ -17,9 +17,10 @@ class ProofClient final : public CefClient,
                           public CefDisplayHandler {
  public:
   using ClosedCallback = std::function<void()>;
+  using LayoutCallback = std::function<void(const std::string&)>;
   ProofClient(int width, int height, ProofMetrics* metrics,
               bool animate, ProofSimulator* simulator,
-              ClosedCallback closed_callback);
+              ClosedCallback closed_callback, LayoutCallback layout_callback);
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
@@ -36,6 +37,12 @@ class ProofClient final : public CefClient,
                         int line) override;
   void RequestExternalFrame();
   void Close(bool force_close);
+  void SetFocus(bool focus);
+  void SendMouseMove(int x, int y, uint32_t modifiers, bool leave);
+  void SendMouseButton(int x, int y, uint32_t modifiers,
+                       CefBrowserHost::MouseButtonType type, bool up, int count);
+  void SendMouseWheel(int x, int y, uint32_t modifiers, int delta_x, int delta_y);
+  void SendKey(std::uint32_t message, std::uintptr_t wparam, std::intptr_t lparam);
 
  private:
   ProofMetrics* const metrics_;
@@ -43,6 +50,7 @@ class ProofClient final : public CefClient,
   mutable std::mutex browser_mutex_;
   CefRefPtr<CefBrowser> browser_;
   ClosedCallback closed_callback_;
+  LayoutCallback layout_callback_;
   const bool animate_;
   IMPLEMENT_REFCOUNTING(ProofClient);
 };

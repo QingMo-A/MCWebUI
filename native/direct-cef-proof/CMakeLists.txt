@@ -67,7 +67,7 @@ target_link_libraries(mcwebui_direct_cef_proof PRIVATE
   libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS}
 )
 if(WIN32)
-  target_link_libraries(mcwebui_direct_cef_proof PRIVATE d3d11.lib dxgi.lib d3dcompiler.lib user32.lib)
+  target_link_libraries(mcwebui_direct_cef_proof PRIVATE d3d11.lib dxgi.lib d3dcompiler.lib user32.lib comctl32.lib)
 endif()
 SET_EXECUTABLE_TARGET_PROPERTIES(mcwebui_direct_cef_proof)
 

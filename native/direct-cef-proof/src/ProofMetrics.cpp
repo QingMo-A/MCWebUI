@@ -128,6 +128,38 @@ void ProofMetrics::RecordLoad(bool success) {
   load_success_ = success;
 }
 
+void ProofMetrics::RecordLabInput(const std::string& kind) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++lab_input_events_;
+  if (std::find(lab_input_kinds_.begin(), lab_input_kinds_.end(), kind) == lab_input_kinds_.end())
+    lab_input_kinds_.push_back(kind);
+  lab_input_observations_.push_back(kind);
+}
+void ProofMetrics::RecordNativeWindowMessage(const std::string&) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++native_window_messages_;
+}
+void ProofMetrics::RecordInputDispatch(const std::string&) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++cef_input_dispatches_;
+}
+
+void ProofMetrics::RecordAlphaAcceptance(bool passed, const std::string& color_space,
+                                         unsigned tolerance, unsigned x, unsigned y,
+                                         unsigned actual_b, unsigned actual_g,
+                                         unsigned actual_r, unsigned actual_a,
+                                         unsigned expected_b, unsigned expected_g,
+                                         unsigned expected_r, unsigned expected_a) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  alpha_attempted_ = true;
+  alpha_passed_ = alpha_passed_ && passed;
+  if (alpha_samples_.empty()) alpha_passed_ = passed;
+  alpha_color_space_ = color_space;
+  alpha_tolerance_ = tolerance;
+  alpha_samples_.push_back({passed, x, y, actual_b, actual_g, actual_r, actual_a,
+                            expected_b, expected_g, expected_r, expected_a});
+}
+
 TimingSummary ProofMetrics::Summarize(
     const std::vector<Clock::time_point>& samples) {
   TimingSummary result;
@@ -316,6 +348,33 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
       << ",\"usage\":" << d3d_usage_
       << ",\"bindFlags\":" << d3d_bind_flags_
       << ",\"cpuAccessFlags\":" << d3d_cpu_access_flags_
-      << ",\"miscFlags\":" << d3d_misc_flags_ << "}\n}\n";
+      << ",\"miscFlags\":" << d3d_misc_flags_ << "},\n"
+      << "  \"alphaAcceptance\":{\"attempted\":"
+      << (alpha_attempted_ ? "true" : "false") << ",\"passed\":"
+      << (alpha_attempted_ && alpha_passed_ ? "true" : "false")
+      << ",\"colorSpace\":\"" << JsonString(alpha_color_space_)
+      << "\",\"tolerance\":" << alpha_tolerance_ << ",\"samples\":[";
+  for (std::size_t index = 0; index < alpha_samples_.size(); ++index) {
+    const auto& sample = alpha_samples_[index];
+    if (index) out << ',';
+    out << "{\"passed\":" << (sample.passed ? "true" : "false")
+        << ",\"x\":" << sample.x << ",\"y\":" << sample.y
+        << ",\"actual\":{\"b\":" << sample.actual_b << ",\"g\":"
+        << sample.actual_g << ",\"r\":" << sample.actual_r << ",\"a\":"
+        << sample.actual_a << "},\"expected\":{\"b\":" << sample.expected_b
+        << ",\"g\":" << sample.expected_g << ",\"r\":" << sample.expected_r
+        << ",\"a\":" << sample.expected_a << "}}";
+  }
+  out << "]},\n  \"interactiveInput\":{\"events\":" << lab_input_events_ << ",\"nativeWindowMessages\":" << native_window_messages_ << ",\"cefInputDispatches\":" << cef_input_dispatches_ << ",\"kinds\":[";
+  for (std::size_t index = 0; index < lab_input_kinds_.size(); ++index) {
+    if (index) out << ',';
+    out << "\"" << JsonString(lab_input_kinds_[index]) << "\"";
+  }
+  out << "],\"observations\":[";
+  for (std::size_t index = 0; index < lab_input_observations_.size(); ++index) {
+    if (index) out << ',';
+    out << "\"" << JsonString(lab_input_observations_[index]) << "\"";
+  }
+  out << "]}\n}\n";
   return true;
 }

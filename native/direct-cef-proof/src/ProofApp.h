@@ -3,8 +3,10 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <map>
 #include <string>
 #include <thread>
+#include <atomic>
 
 #include <windows.h>
 
@@ -19,7 +21,7 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
            int target_hz, int duration_ms, bool accelerated,
            bool animate, bool simulator, bool mailbox,
            std::string present_mode, std::string output_path,
-           int windowless_frame_rate_override);
+           int windowless_frame_rate_override, bool alpha_proof, bool interactive, bool auto_input);
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   void OnBeforeChildProcessLaunch(CefRefPtr<CefCommandLine> command_line) override;
   void OnContextInitialized() override;
@@ -35,6 +37,14 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
   const int height_;
   const int target_hz_;
   const int windowless_frame_rate_override_;
+  const bool alpha_proof_;
+  const bool interactive_;
+  const bool auto_input_;
+  std::atomic<bool> layout_ready_{false};
+  std::atomic<bool> input_focus_{false};
+  std::atomic<bool> input_active_{false};
+  mutable std::mutex layout_mutex_;
+  std::map<std::string, POINT> layout_points_;
   const int duration_ms_;
   const bool accelerated_;
   const bool animate_;
@@ -46,10 +56,12 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
   CefRefPtr<ProofClient> client_;
   std::thread close_thread_;
   std::thread scheduler_thread_;
+  std::thread input_thread_;
   mutable std::mutex mutex_;
   std::condition_variable closed_condition_;
   bool closed_ = false;
   bool stopping_ = false;
+  mutable std::mutex window_mutex_;
   HWND host_window_ = nullptr;
   std::unique_ptr<ProofSimulator> simulator_renderer_;
   IMPLEMENT_REFCOUNTING(ProofApp);

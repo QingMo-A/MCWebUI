@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -16,13 +17,40 @@
 
 class ProofMetrics;
 
+enum class InputEventKind : std::uint8_t {
+  Focus,
+  MouseMove,
+  MouseButton,
+  MouseWheel,
+  Key,
+  CaptureLost,
+  Close,
+};
+
+struct InputEvent {
+  InputEventKind kind = InputEventKind::MouseMove;
+  int x = 0;
+  int y = 0;
+  std::uint32_t modifiers = 0;
+  std::uint32_t message = 0;
+  std::uintptr_t wparam = 0;
+  std::intptr_t lparam = 0;
+  int delta_x = 0;
+  int delta_y = 0;
+  int button = 0;
+  bool pressed = false;
+  bool leave = false;
+  bool focused = false;
+};
+
 // GPU-only presentation proof. Coupled mode is retained for the historical
 // baseline. Mailbox mode copies CEF frames into host-owned slots and presents
 // them from an independent consumer loop; no CPU readback is used.
 class ProofSimulator final {
  public:
   ProofSimulator(HWND window, int width, int height, ProofMetrics* metrics,
-                 bool mailbox, int target_hz, bool uncoupled);
+                 bool mailbox, int target_hz, bool uncoupled,
+                 bool alpha_proof = false);
   ~ProofSimulator();
   ProofSimulator(const ProofSimulator&) = delete;
   ProofSimulator& operator=(const ProofSimulator&) = delete;
@@ -38,6 +66,8 @@ class ProofSimulator final {
   std::uint64_t PresentedFrames() const;
   bool MailboxMode() const { return mailbox_; }
   bool Ready() const { return ready_; }
+  using InputSink = std::function<void(const InputEvent&)>;
+  void SetInputSink(InputSink sink);
 
  private:
   bool EnsurePipeline();
@@ -47,6 +77,14 @@ class ProofSimulator final {
   void ConsumerLoop();
   bool DrawFrame(ID3D11ShaderResourceView* source);
   bool PresentFrame(bool has_generation, bool has_new_generation);
+  bool RunAlphaAcceptance(ID3D11Texture2D* source);
+  bool InstallInputSubclass();
+  void RemoveInputSubclass();
+  void DispatchInput(const InputEvent& event);
+  static LRESULT CALLBACK InputSubclassProc(HWND window, UINT message,
+                                             WPARAM wparam, LPARAM lparam,
+                                             UINT_PTR subclass_id,
+                                             DWORD_PTR ref_data);
 
   struct MailboxSlot {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
@@ -61,7 +99,12 @@ class ProofSimulator final {
   const bool mailbox_;
   const int target_hz_;
   const bool uncoupled_;
+  const bool alpha_proof_;
   bool ready_ = false;
+  bool alpha_checked_ = false;
+  mutable std::mutex input_mutex_;
+  InputSink input_sink_;
+  bool input_subclass_installed_ = false;
   std::atomic<bool> stopping_{false};
   std::thread consumer_thread_;
   mutable std::mutex gpu_mutex_;

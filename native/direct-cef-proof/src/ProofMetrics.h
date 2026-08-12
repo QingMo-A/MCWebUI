@@ -41,6 +41,15 @@ class ProofMetrics final {
   void RecordRaf(std::uint64_t callbacks, double rate_hz, double median_ms,
                  double p95_ms, double max_ms);
   void RecordLoad(bool success);
+  void RecordLabInput(const std::string& kind);
+  void RecordNativeWindowMessage(const std::string& kind);
+  void RecordInputDispatch(const std::string& kind);
+  void RecordAlphaAcceptance(bool passed, const std::string& color_space,
+                             unsigned tolerance, unsigned x, unsigned y,
+                             unsigned actual_b, unsigned actual_g,
+                             unsigned actual_r, unsigned actual_a,
+                             unsigned expected_b, unsigned expected_g,
+                             unsigned expected_r, unsigned expected_a);
   std::string FormatLine() const;
   bool WriteJson(const std::string& path) const;
 
@@ -77,6 +86,29 @@ class ProofMetrics final {
   std::uint64_t new_generation_presented_frames_ = 0;
   std::uint64_t repeated_generation_presented_frames_ = 0;
   std::uint64_t no_generation_presented_frames_ = 0;
+  std::uint64_t lab_input_events_ = 0;
+  std::uint64_t native_window_messages_ = 0;
+  std::uint64_t cef_input_dispatches_ = 0;
+  std::vector<std::string> lab_input_kinds_;
+  std::vector<std::string> lab_input_observations_;
+  struct AlphaSample {
+    bool passed = false;
+    unsigned x = 0;
+    unsigned y = 0;
+    unsigned actual_b = 0;
+    unsigned actual_g = 0;
+    unsigned actual_r = 0;
+    unsigned actual_a = 0;
+    unsigned expected_b = 0;
+    unsigned expected_g = 0;
+    unsigned expected_r = 0;
+    unsigned expected_a = 0;
+  };
+  bool alpha_attempted_ = false;
+  bool alpha_passed_ = false;
+  std::string alpha_color_space_;
+  unsigned alpha_tolerance_ = 0;
+  std::vector<AlphaSample> alpha_samples_;
   void* last_handle_ = nullptr;
   std::uint64_t child_process_launches_ = 0;
   std::uint64_t gpu_process_launches_ = 0;

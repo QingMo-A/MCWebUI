@@ -30,6 +30,36 @@ const showModal = ref(false);
 const toast = ref("");
 const loading = ref(false);
 const diagnostics = ref<Record<string, unknown>>({});
+const transparentView = new URLSearchParams(window.location.search).get("view");
+const transparentLab = transparentView === "transparent-lab" ||
+  new URLSearchParams(window.location.search).has("transparent-lab") ||
+  window.location.hash === "#transparent-lab";
+const labRange = ref(48);
+const labChecked = ref(true);
+const labChoice = ref("balanced");
+const labText = ref("");
+const labScroll = ref<HTMLElement | null>(null);
+const labModal = ref(false);
+const labInputEvents = ref(0);
+function recordLabInput(kind = "control") {
+  labInputEvents.value++;
+  const state = { kind, range: labRange.value, checked: labChecked.value, choice: labChoice.value, text: labText.value, scrollTop: labScroll.value?.scrollTop ?? 0, modal: labModal.value };
+  console.info(`MCWEBUI_INPUT ${JSON.stringify(state)}`);
+}
+function closeLabModal(event?: KeyboardEvent) {
+  if (!event) {
+    labModal.value = false;
+    recordLabInput("modalClose");
+    return;
+  }
+  if (event.key !== "Escape") return;
+  if (labModal.value) {
+    labModal.value = false;
+    recordLabInput("modalEscape");
+  } else {
+    recordLabInput("escape");
+  }
+}
 type AnimationMode = "css" | "direct" | "vue";
 const animationMode = ref<AnimationMode>("css");
 const animationRunning = ref(false);
@@ -209,6 +239,7 @@ watch(activeTab, (tab) => {
   if (tab === "runtime") void refreshDiagnostics();
 });
 onMounted(async () => {
+  if (transparentLab) document.body.classList.add("transparent-mode");
   document.addEventListener("pointerdown", closeSelectOnOutside);
   document.addEventListener("keydown", closeSelectOnEscape);
   try {
@@ -220,6 +251,7 @@ onMounted(async () => {
   } catch { /* connectionState/connectionError expose the failure to the UI */ }
 });
 onBeforeUnmount(() => {
+  document.body.classList.remove("transparent-mode");
   document.removeEventListener("pointerdown", closeSelectOnOutside);
   document.removeEventListener("keydown", closeSelectOnEscape);
   if (toastTimer) window.clearTimeout(toastTimer);
@@ -228,7 +260,34 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="shell">
+  <main v-if="transparentLab" class="transparent-lab" @keydown="closeLabModal">
+    <header class="transparent-lab-header">
+      <div><p class="eyebrow">MCWebUI · Direct CEF acceptance</p><h1>Transparent WebScreen Lab</h1><p>Real HTML controls over a moving GPU background. No JavaScript-generated input.</p></div>
+      <span class="lab-live">INTERACTIVE</span>
+    </header>
+    <section class="alpha-grid" aria-label="Alpha patches">
+      <article v-for="patch in [{alpha:0,label:'0%'},{alpha:.25,label:'25%'},{alpha:.5,label:'50%'},{alpha:.75,label:'75%'},{alpha:1,label:'100%'}]" :key="patch.label" class="alpha-patch" :style="{ backgroundColor: `rgba(214, 74, 88, ${patch.alpha})` }">
+        <i class="alpha-sample" aria-hidden="true"></i><strong>{{ patch.label }}</strong><small>fixed RGB</small>
+      </article>
+    </section>
+    <section class="transparent-panel" aria-label="Native HTML controls">
+      <div class="lab-panel-heading"><div><p class="eyebrow">Native controls</p><h2>Operate the browser surface</h2></div><span class="lab-readout">events {{ labInputEvents }}</span></div>
+      <div class="lab-control-grid">
+        <label>Range <output>{{ labRange }}</output><input data-test="range" v-model="labRange" type="range" min="0" max="100" @input="recordLabInput('range')" /></label>
+        <button data-test="button" class="lab-button" type="button" @click="recordLabInput('button')">Native button</button>
+        <label class="lab-check"><input data-test="checkbox" v-model="labChecked" type="checkbox" @change="recordLabInput('checkbox')" /> Checkbox</label>
+        <label>Select <select data-test="select" v-model="labChoice" @change="recordLabInput('select')"><option value="focused">Focused</option><option value="balanced">Balanced</option><option value="expressive">Expressive</option></select></label>
+        <label class="lab-text">Text input<input data-test="text" v-model="labText" type="text" placeholder="Type basic Latin text" @focus="recordLabInput('focus')" @input="recordLabInput('text')" /></label>
+      </div>
+      <div class="lab-lower-grid">
+        <div data-test="scroll" ref="labScroll" class="lab-scroll" tabindex="0" aria-label="Scrollable acceptance area" @scroll="recordLabInput('scroll')"><p v-for="index in 18" :key="index">Runtime signal {{ String(index).padStart(2, "0") }} · wheel and scrollbar target</p></div>
+        <div class="lab-actions"><button data-test="modal" class="lab-button" type="button" @click="labModal = true; recordLabInput('modal')">Open modal</button><svg class="alpha-svg" viewBox="0 0 64 44" aria-label="SVG alpha sample"><circle cx="22" cy="22" r="18" fill="rgba(105,230,173,.45)"/><circle cx="42" cy="22" r="18" fill="rgba(140,169,255,.65)"/></svg></div>
+      </div>
+    </section>
+    <div v-if="labModal" class="lab-modal-backdrop" @click.self="closeLabModal()"><section class="lab-modal" role="dialog" aria-modal="true" aria-labelledby="lab-modal-title"><h2 id="lab-modal-title">Transparent modal</h2><p>Opacity, transform, rounded corners, shadow, and focus are all browser-rendered.</p><button data-test="modal-close" class="lab-button" type="button" @click="closeLabModal()">Close</button></section></div>
+    <p class="transparent-lab-footer">ESC closes the modal or the native window · IME is not tested in this proof</p>
+  </main>
+  <main v-else class="shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">M</span><div><p class="eyebrow">MCWebUI</p><h1>Runtime showcase</h1></div></div>
       <div class="topbar-meta"><span class="live-dot" :class="statusClass"></span><span>{{ statusLabel }}</span><span class="separator">·</span><span>{{ diagnostics.loader ?? "Target adapter" }}</span></div>
