@@ -1,5 +1,13 @@
 plugins {
     id 'base'
+    id 'com.github.node-gradle.node' version '7.1.0'
+}
+
+node {
+    version = '22.22.2'
+    npmVersion = '10.9.7'
+    download = true
+    nodeProjectDir = rootProject.projectDir
 }
 
 allprojects {
@@ -20,33 +28,32 @@ if (!gradle.ext.has('mcwebuiTargetManifest')) {
 def targetManifest = gradle.ext.mcwebuiTargetManifest
 def targetEntries = targetManifest.targets
 
-def npmExecutable = org.gradle.internal.os.OperatingSystem.current().isWindows() ? 'npm.cmd' : 'npm'
 def frontendDirectory = rootProject.projectDir
 def frontendLock = file('package-lock.json')
 
-tasks.register('frontendInstall', Exec) {
+tasks.register('frontendInstall', com.github.gradle.node.npm.task.NpmTask) {
     group = 'mcwebui'
     description = 'Install the locked frontend workspace dependencies.'
-    workingDir frontendDirectory
-    commandLine npmExecutable, 'ci'
+    workingDir.set(frontendDirectory)
+    args = ['ci']
     inputs.file(frontendLock)
     outputs.dir(new File(frontendDirectory, 'node_modules'))
 }
 
-tasks.register('frontendTypecheck', Exec) {
+tasks.register('frontendTypecheck', com.github.gradle.node.npm.task.NpmTask) {
     group = 'mcwebui'
     description = 'Typecheck all MCWebUI frontend workspaces.'
     dependsOn('frontendInstall')
-    workingDir frontendDirectory
-    commandLine npmExecutable, 'run', 'typecheck:web'
+    workingDir.set(frontendDirectory)
+    args = ['run', 'typecheck:web']
 }
 
-tasks.register('frontendBuild', Exec) {
+tasks.register('frontendBuild', com.github.gradle.node.npm.task.NpmTask) {
     group = 'mcwebui'
     description = 'Build the shared Vue frontend bundle.'
     dependsOn('frontendInstall')
-    workingDir frontendDirectory
-    commandLine npmExecutable, 'run', 'build:web'
+    workingDir.set(frontendDirectory)
+    args = ['run', 'build:web']
     inputs.dir(file('frontend'))
     outputs.dir(file('frontend/playground/dist'))
 }

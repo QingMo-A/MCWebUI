@@ -29,6 +29,10 @@ node_modules/
 mcef/
 cef-cache/
 web-cache/
+DawnCache/
+GPUCache/
+direct-cef-proof*.json
+direct-cef-proof*.log
 
 # OS
 .DS_Store
