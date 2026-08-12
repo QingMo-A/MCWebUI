@@ -11,12 +11,27 @@ and records three independent clocks:
 - browser `requestAnimationFrame` aggregates reported once per second;
 - CPU `OnPaint` and optional `OnAcceleratedPaint` callbacks.
 
-Supported modes are `backend-default` and `external-begin-frame`. Target rates
+Supported modes are `windowed-baseline`, `backend-default`, and
+`external-begin-frame`. Target rates
 30, 60, 120, and 144 are requests, never reported as browser FPS. `--idle`
 keeps the rAF observer running but stops the injected visual mutation so idle
 paint suppression can be measured. `--accelerated` requests the CEF 5845
 shared-texture path and attempts `ID3D11Device::OpenSharedResource` only if an
-actual accelerated callback supplies a handle.
+actual accelerated callback supplies a handle. `--simulator` additionally
+opens each handle with D3D11.1 `OpenSharedResource1`, samples it in a GPU-only
+fullscreen shader over a moving native background, and presents through a
+DXGI swap chain. It records `presentedFrames`; it never performs CPU readback.
+
+`windowed-baseline` uses a normal native CEF popup (no OSR) as a browser
+compositor/rAF reference. It does not produce `OnPaint` or
+`OnAcceleratedPaint`; a zero render surface is expected for this mode.
+
+The result JSON includes `gpuDiagnostics` from CEF child-process callbacks
+(GPU/renderer launches, filtered GPU switches, and accelerated/D3D outcomes).
+This is diagnostics evidence, not a claim of GPU utilization or screen
+presentation. The modern CEF profile and current measured blocker are recorded
+in `plans/direct-cef-runtime-plan.md` and
+`plans/transparent-webscreen-plan.md`.
 
 CEF SDK/runtime files, CMake output, logs, caches, and result JSON must remain
 outside the repository. The helper scripts default to `%TEMP%` and reuse the
@@ -26,11 +41,12 @@ pinned SDK downloader under `scripts/frame-proof`.
 Set-ExecutionPolicy -Scope Process Bypass
 $cef = .\scripts\direct-cef-proof\prepare-direct-cef-proof.ps1
 $exe = .\scripts\direct-cef-proof\build-direct-cef-proof.ps1 -CefRoot $cef
-.\scripts\direct-cef-proof\run-direct-cef-proof.ps1 -Executable $exe -IncludeAccelerated
+.\scripts\direct-cef-proof\run-direct-cef-proof.ps1 -Executable $exe -IncludeAccelerated -IncludeSimulator
 ```
 
 The executable uses `CefExecuteProcess`, a same-executable subprocess model,
-`multi_threaded_message_loop`, a hidden Windows host, and OSR browser creation.
+`multi_threaded_message_loop`, a hidden Windows host for OSR, and a normal
+popup host for `windowed-baseline`.
 It writes CEF cache/log files below `%TEMP%\mcwebui-direct-cef-runtime` and one
 aggregate JSON result per run. No per-frame logging or disk I/O occurs in the
 render callbacks.

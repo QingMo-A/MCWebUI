@@ -1,5 +1,80 @@
 # Direct CEF runtime proof
 
+## Modern CEF 144 isolated profile (2026-08-12)
+
+Status: **IMPLEMENTED / RUNTIME MEASURED; accelerated callback, D3D11 shared
+texture, and GPU-only simulator present are VERIFIED on this host.** Visual
+alpha inspection and real input forwarding remain **NOT TESTED**. The
+production CEF/MCEF/JCEF configuration is unchanged.
+
+The selected official automated-build metadata entry is the current stable
+Windows x64 standard binary:
+
+- CEF: `144.0.33+gcb4715c+chromium-144.0.7559.259`.
+- Chromium: `144.0.7559.259`.
+- CEF commit: `cb4715c47322f31bee2bf2ad9d9add3cf8fc8ea0`.
+- Metadata: `https://cef-builds.spotifycdn.com/index.json` (stable,
+  standard file; metadata observed 2026-08-12).
+- Archive URL:
+  `https://cef-builds.spotifycdn.com/cef_binary_144.0.33%2Bgcb4715c%2Bchromium-144.0.7559.259_windows64.tar.bz2`.
+- Archive SHA-256:
+  `CD03702954F21BDD773449D2DD37290BBBC4B908456837763A9DDB1FF42D6A40`.
+- `Release/libcef.dll` SHA-256:
+  `5A5556425AD319735175BB6CA386813B73AD515D49081BDE6FC0423F034D8EBE`.
+
+The proof compiles against the modern SDK's actual header signature
+(`OnAcceleratedPaint(..., const CefAcceleratedPaintInfo&)`) and embeds the
+official CEF Windows compatibility manifest. Build result: **VERIFIED** with
+VS Community 18.7.3/MSVC 19.51, CMake/Ninja, Release x64. The manifest was
+material: before embedding it, the GPU process logged context creation errors
+and exited with `-2147483645`; after embedding, the GPU process launched and
+all CPU/accelerated runs loaded the real frontend bundle.
+
+The 1280x720 modern matrix below used 2.5--3 seconds per run. Values are
+measured from the result JSON; request rate is not presented as FPS.
+
+| Mode | BeginFrame/s | Browser rAF/s | CPU OnPaint/s | Accelerated/s | D3D11 | Result |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Windowed baseline | 0.00 | 180.08 (earlier run) | 0.00 | 0.00 | n/a | **NOT RUNTIME VERIFIED** (later run had rAF 0) |
+| Backend default | 0.00 | 30.00 | 30.35 | 0.00 | n/a | **VERIFIED** |
+| External 30 | 30.01 | 30.01 | 29.53 | 0.00 | n/a | **VERIFIED** |
+| External 60 | 59.88 | 60.03 | 55.88 | 0.00 | n/a | **VERIFIED** |
+| External 120 | 119.98 | 83.90 | 57.83 | 0.00 | n/a | **VERIFIED; ~60 paint ceiling** |
+| External 144 | 144.22 | 86.58 | 55.88 | 0.00 | n/a | **VERIFIED; ~60 paint ceiling** |
+| Accelerated 60 (legacy open attempt) | 59.89 | 59.74 | 0.00 | 45.56 | legacy `OpenSharedResource` `0x80070057` | **SUPERSEDED** |
+| Simulator 60 | 59.84 | 59.15 | 0.00 | 54.32 | `OpenSharedResource1` success | **VERIFIED GPU present (158 frames)** |
+| Idle external 144 | 144.70 | 36.62 | 0.00 | 0.00 | n/a | **VERIFIED paint suppression** |
+
+Accelerated OSR is therefore not being silently classified as CPU success:
+CEF delivered accelerated callbacks with no CPU `OnPaint`, and the callback
+handle changed repeatedly. The first D3D11 implementation used the legacy
+`OpenSharedResource` call and returned `E_INVALIDARG`; modern CEF's header
+documents a no-keyed-mutex handle, so the proof now uses D3D11.1
+`ID3D11Device1::OpenSharedResource1`. A fresh run opened 158 handles and
+presented 158 GPU frames at 54.32/s. The callback handle is reopened only
+inside its callback and never cached.
+
+The optional `--simulator` path is **IMPLEMENTED / RUNTIME VERIFIED for GPU
+submission**: a DXGI flip-discard swap chain renders a moving native
+background and samples the CEF texture in a fullscreen pixel shader before
+`Present`. No CPU readback is used. Visual alpha correctness, pixel capture,
+mouse/keyboard forwarding, and interactive slider/scroll checks are **NOT
+TESTED** in this headless run, so this is not yet a full transparent WebScreen
+acceptance proof.
+
+The JSON now includes `gpuDiagnostics`: child-process count, observed GPU and
+renderer launches, the filtered GPU command-line switches, whether an
+accelerated callback was observed, and whether D3D opening succeeded. The
+modern run observed one GPU process and two renderer launches; the last GPU
+command line was `--type=gpu-process` with no forced ANGLE/software switches.
+This is direct CEF process evidence, not a Task Manager inference. Chromium
+GPU utilization, ANGLE vendor/backend strings, GPU memory, and display-present
+cadence remain **NOT MEASURED**.
+
+Because D3D11 opening failed, the transparent D3D simulator, alpha semantics,
+real mouse/keyboard input forwarding, and Minecraft integration are
+**NOT TESTED**. No CPU readback fallback is used or claimed.
+
 Status: **VERIFIED CPU OSR; VERIFIED external pacing improvement with an
 approximately 60 Hz browser/paint ceiling; FAILED accelerated callback on this
 CEF 5845 machine**.
@@ -113,11 +188,12 @@ upgrading CEF to hide this result is out of scope.
 
 ## 9. D3D11 shared texture result
 
-The callback path is **IMPLEMENTED / NOT RUNTIME VERIFIED**. On a real
-`OnAcceleratedPaint`, the proof creates a hardware D3D11 device, immediately
-calls `OpenSharedResource`, reads the `ID3D11Texture2D` descriptor, and does not
-retain the CEF handle beyond the callback. Since accelerated callbacks were
-zero, D3D opening was not attempted and there is no descriptor to report.
+The callback path is **VERIFIED** for modern CEF 144. On a real
+`OnAcceleratedPaint`, the proof creates a hardware D3D11.1 device, immediately
+calls `OpenSharedResource1`, reads the `ID3D11Texture2D` descriptor, and does
+not retain the CEF handle beyond the callback. The sample reports 1280x720,
+format 1 (`BGRA8`), sample count 1. CEF 5845 remains **NOT RUNTIME VERIFIED**
+for D3D opening because it delivered zero accelerated callbacks.
 
 ## 10. Known limitations
 
@@ -127,8 +203,10 @@ zero, D3D opening was not attempted and there is no descriptor to report.
 - No CPU, GPU utilization, memory, power, or frame-present measurements.
 - `file://` is proof-only and does not replace the production `mcui://` scheme.
 - A one-second console aggregate is used instead of per-frame IPC.
-- Accelerated OSR did not activate, so its handle lifetime and adapter matching
-  remain runtime-unverified.
+- Adapter identity, alpha pixel correctness, input forwarding, and display
+  scanout/present cadence remain **NOT MEASURED**. The simulator's
+  `presentedFrames` counter measures successful DXGI `Present` calls, not
+  physical display scanout.
 
 ## 11. Thin JNI sketch
 
@@ -162,11 +240,10 @@ measurement output is committed in this repository.
 
 ## 15. Recommendation
 
-**Verdict C: CPU path succeeds but Accelerated OSR is blocked; decide whether
-CPU OSR performance is sufficient.** Direct CEF proves that bypassing
-MCEF/JCEF can move CPU OSR from ~30 to ~55-57 paint callbacks/s, but it does not
-prove 120/144 browser output or a usable GPU shared texture. Keep the current
-MCEF backend and Direct CEF proof isolated. The next focused question is why
-CEF 5845 ignored the requested shared-texture path on this machine; only then
-decide between CPU Direct CEF, a newer isolated CEF proof, or an alternative
-backend.
+**Verdict B: modern accelerated OSR plus a GPU-only compositor/present loop is
+verified, but high-refresh pacing and transparent/input acceptance remain
+incomplete.** Direct CEF bypasses MCEF/JCEF and provides a usable modern GPU
+shared texture; CPU OSR still plateaus near 55--58 paint/s at 120/144 requests,
+and accelerated callbacks/present measured about 54/s at a 60 target. Keep the
+current MCEF backend and Direct CEF proof isolated until visual alpha and real
+input are separately validated; do not integrate into Minecraft yet.
