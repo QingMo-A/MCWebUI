@@ -40,12 +40,13 @@ Minecraft integration work is authorized:
 5. Requests, browser rAF, accelerated callbacks, and D3D-presented frames are
    measured separately at 60/120/144 targets with median/P95/P99 or max jank.
 
-The current modern CEF 144 result passes gates 1--3 for GPU submission: 158
-accelerated callbacks opened through D3D11.1 `OpenSharedResource1` and 158
-fullscreen GPU frames were presented over a moving native background in a
-3-second run. Visual alpha inspection, real input, and physical display
-scanout remain **NOT TESTED**. Do not claim the full transparent WebScreen
-route until those checks pass; do not add a CPU readback workaround.
+The current modern CEF 144 result passes gates 1--3 for GPU submission: the
+latest full matrix opened accelerated handles through D3D11.1
+`OpenSharedResource1` and presented 133 fullscreen GPU frames at 54.85/s over
+a moving native background (an earlier standalone run presented 158 at
+54.32/s). Visual alpha inspection, real input, and physical display scanout
+remain **NOT TESTED**. Do not claim the full transparent WebScreen route until
+those checks pass; do not add a CPU readback workaround.
 
 ## Current isolated findings
 
@@ -56,8 +57,11 @@ route until those checks pass; do not add a CPU readback workaround.
   windowed reference observed 180 Hz rAF in one run but a later run observed
   zero rAF, so WINDOWED_BASELINE is **NOT RUNTIME VERIFIED**.
 - Modern CPU OSR reproduces the approximately 60 paint/s ceiling at 120/144
-  requests. Modern accelerated OSR delivers callbacks without CPU paint, but
-  D3D shared-resource opening fails on this host.
+  requests. Modern accelerated OSR delivers callbacks without CPU paint, and
+  D3D11.1 shared-resource opening/present is verified in the simulator.
+- The serialized D3D `format: 1` is the CEF enum
+  `CEF_COLOR_TYPE_BGRA_8888`; it is not a DXGI format. Exact
+  `ID3D11_TEXTURE2D_DESC::Format` is **NOT MEASURED** by the current JSON.
 - GPU process launch evidence and CEF logs are recorded in result JSON. ANGLE
   backend strings, vendor/device identity, utilization, and actual display
   presentation are **NOT MEASURED**.

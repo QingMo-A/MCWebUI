@@ -42,7 +42,7 @@ measured from the result JSON; request rate is not presented as FPS.
 | External 120 | 119.98 | 83.90 | 57.83 | 0.00 | n/a | **VERIFIED; ~60 paint ceiling** |
 | External 144 | 144.22 | 86.58 | 55.88 | 0.00 | n/a | **VERIFIED; ~60 paint ceiling** |
 | Accelerated 60 (legacy open attempt) | 59.89 | 59.74 | 0.00 | 45.56 | legacy `OpenSharedResource` `0x80070057` | **SUPERSEDED** |
-| Simulator 60 | 59.84 | 59.15 | 0.00 | 54.32 | `OpenSharedResource1` success | **VERIFIED GPU present (158 frames)** |
+| Simulator 60 (latest full matrix) | 59.94 | 60.35 | 0.00 | 54.85 | `OpenSharedResource1` success | **VERIFIED GPU present (133 frames)** |
 | Idle external 144 | 144.70 | 36.62 | 0.00 | 0.00 | n/a | **VERIFIED paint suppression** |
 
 Accelerated OSR is therefore not being silently classified as CPU success:
@@ -50,9 +50,9 @@ CEF delivered accelerated callbacks with no CPU `OnPaint`, and the callback
 handle changed repeatedly. The first D3D11 implementation used the legacy
 `OpenSharedResource` call and returned `E_INVALIDARG`; modern CEF's header
 documents a no-keyed-mutex handle, so the proof now uses D3D11.1
-`ID3D11Device1::OpenSharedResource1`. A fresh run opened 158 handles and
-presented 158 GPU frames at 54.32/s. The callback handle is reopened only
-inside its callback and never cached.
+`ID3D11Device1::OpenSharedResource1`. The latest full-matrix run presented 133
+GPU frames at 54.85/s (an earlier standalone run presented 158 at 54.32/s).
+The callback handle is reopened only inside its callback and never cached.
 
 The optional `--simulator` path is **IMPLEMENTED / RUNTIME VERIFIED for GPU
 submission**: a DXGI flip-discard swap chain renders a moving native
@@ -71,9 +71,9 @@ This is direct CEF process evidence, not a Task Manager inference. Chromium
 GPU utilization, ANGLE vendor/backend strings, GPU memory, and display-present
 cadence remain **NOT MEASURED**.
 
-Because D3D11 opening failed, the transparent D3D simulator, alpha semantics,
-real mouse/keyboard input forwarding, and Minecraft integration are
-**NOT TESTED**. No CPU readback fallback is used or claimed.
+The transparent D3D simulator's GPU submission/present is **VERIFIED**; alpha
+pixel inspection, real mouse/keyboard input forwarding, and Minecraft
+integration are **NOT TESTED**. No CPU readback fallback is used or claimed.
 
 Status: **VERIFIED CPU OSR; VERIFIED external pacing improvement with an
 approximately 60 Hz browser/paint ceiling; FAILED accelerated callback on this
@@ -192,8 +192,12 @@ The callback path is **VERIFIED** for modern CEF 144. On a real
 `OnAcceleratedPaint`, the proof creates a hardware D3D11.1 device, immediately
 calls `OpenSharedResource1`, reads the `ID3D11Texture2D` descriptor, and does
 not retain the CEF handle beyond the callback. The sample reports 1280x720,
-format 1 (`BGRA8`), sample count 1. CEF 5845 remains **NOT RUNTIME VERIFIED**
-for D3D opening because it delivered zero accelerated callbacks.
+serialized `format: 1` is the CEF color enum
+`CEF_COLOR_TYPE_BGRA_8888` (not a DXGI format; DXGI format 1 is not BGRA8).
+The current JSON does not serialize the `ID3D11_TEXTURE2D_DESC::Format`
+numeric value separately, so the exact DXGI format is **NOT MEASURED** in this
+proof. CEF 5845 remains **NOT RUNTIME VERIFIED** for D3D opening because it
+delivered zero accelerated callbacks.
 
 ## 10. Known limitations
 
