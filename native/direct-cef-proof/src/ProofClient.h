@@ -9,6 +9,7 @@
 #include "include/cef_life_span_handler.h"
 #include "ProofMetrics.h"
 #include "ProofRenderHandler.h"
+#include "ProofSimulator.h"
 
 class ProofClient final : public CefClient,
                           public CefLifeSpanHandler,
@@ -17,7 +18,8 @@ class ProofClient final : public CefClient,
  public:
   using ClosedCallback = std::function<void()>;
   ProofClient(int width, int height, ProofMetrics* metrics,
-              bool animate, ClosedCallback closed_callback);
+              bool animate, ProofSimulator* simulator,
+              ClosedCallback closed_callback);
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }

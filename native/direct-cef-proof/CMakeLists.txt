@@ -19,6 +19,14 @@ find_package(CEF REQUIRED)
 # Use the wrapper and configuration helpers shipped by the selected CEF SDK.
 add_subdirectory("${CEF_LIBCEF_DLL_WRAPPER_PATH}" libcef_dll_wrapper)
 ADD_LOGICAL_TARGET("libcef_lib" "${CEF_LIB_DEBUG}" "${CEF_LIB_RELEASE}")
+# The official Windows SDK headers contain UTF-8 documentation comments.  On
+# systems whose active MSVC code page is not UTF-8, cl.exe emits C4819 for
+# those comments and CEF's /WX turns that harmless encoding warning into a
+# build failure.  Suppress only that warning; source/API diagnostics remain
+# warnings-as-errors.
+if(MSVC)
+  target_compile_options(libcef_dll_wrapper PRIVATE /wd4819)
+endif()
 
 set(PROOF_SOURCES
   src/main.cpp
@@ -28,6 +36,8 @@ set(PROOF_SOURCES
   src/ProofClient.h
   src/ProofRenderHandler.cpp
   src/ProofRenderHandler.h
+  src/ProofSimulator.cpp
+  src/ProofSimulator.h
   src/ProofMetrics.cpp
   src/ProofMetrics.h
 )
@@ -50,15 +60,28 @@ target_compile_options(mcwebui_direct_cef_proof PRIVATE
   $<$<CONFIG:Debug>:${CEF_COMPILER_FLAGS_DEBUG} ${CEF_CXX_COMPILER_FLAGS_DEBUG}>
   $<$<CONFIG:Release>:${CEF_COMPILER_FLAGS_RELEASE} ${CEF_CXX_COMPILER_FLAGS_RELEASE}>
 )
+if(MSVC)
+  target_compile_options(mcwebui_direct_cef_proof PRIVATE /wd4819)
+endif()
 target_link_libraries(mcwebui_direct_cef_proof PRIVATE
   libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS}
 )
 if(WIN32)
-  target_link_libraries(mcwebui_direct_cef_proof PRIVATE d3d11.lib)
+  target_link_libraries(mcwebui_direct_cef_proof PRIVATE d3d11.lib dxgi.lib d3dcompiler.lib user32.lib)
 endif()
 SET_EXECUTABLE_TARGET_PROPERTIES(mcwebui_direct_cef_proof)
 
 if(WIN32)
+  # Keep the output directory explicit because this proof overrides the CEF
+  # helper's default Release/Debug layout. Embed the official CEF Windows
+  # compatibility manifest before runtime probing; without it modern CEF can
+  # fail GPU virtualization during process startup on supported Windows hosts.
+  set(CEF_TARGET_OUT_DIR "${CMAKE_BINARY_DIR}/bin")
+  ADD_WINDOWS_MANIFEST(
+    "${CMAKE_CURRENT_SOURCE_DIR}/win"
+    "mcwebui_direct_cef_proof"
+    "exe"
+  )
   # The runtime files are intentionally copied only to the ignored build tree.
   # CEF SDK/runtime binaries must never be committed to MCWebUI.
   COPY_FILES(mcwebui_direct_cef_proof "${CEF_BINARY_FILES}" "${CEF_BINARY_DIR}" "${CEF_TARGET_OUT_DIR}")
@@ -72,4 +95,4 @@ set_target_properties(mcwebui_direct_cef_proof PROPERTIES
 )
 
 message(STATUS "MCWebUI Direct CEF proof uses CEF_ROOT=${CEF_ROOT}")
-message(STATUS "Modes: BACKEND_DEFAULT, EXTERNAL_BEGIN_FRAME, optional accelerated OSR probe")
+message(STATUS "Modes: BACKEND_DEFAULT, EXTERNAL_BEGIN_FRAME, WINDOWED_BASELINE, optional accelerated OSR probe")

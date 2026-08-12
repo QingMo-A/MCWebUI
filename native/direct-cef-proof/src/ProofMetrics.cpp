@@ -54,6 +54,11 @@ void ProofMetrics::RecordD3D(bool opened, unsigned width, unsigned height,
   }
 }
 
+void ProofMetrics::RecordPresented() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++presented_frames_;
+}
+
 void ProofMetrics::RecordRaf(std::uint64_t callbacks, double rate_hz,
                              double median_ms, double p95_ms, double max_ms) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -103,6 +108,41 @@ std::string ProofMetrics::JsonTiming(const TimingSummary& value) {
   return out.str();
 }
 
+namespace {
+std::string JsonString(const std::string& value) {
+  std::ostringstream escaped;
+  for (const unsigned char character : value) {
+    switch (character) {
+      case '\\': escaped << "\\\\"; break;
+      case '"': escaped << "\\\""; break;
+      case '\n': escaped << "\\n"; break;
+      case '\r': escaped << "\\r"; break;
+      case '\t': escaped << "\\t"; break;
+      default:
+        if (character < 0x20) {
+          escaped << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+                  << static_cast<unsigned>(character) << std::dec << std::setfill(' ');
+        } else {
+          escaped << character;
+        }
+    }
+  }
+  return escaped.str();
+}
+}  // namespace
+
+void ProofMetrics::RecordChildProcess(const std::string& process_type,
+                                      const std::string& command_line) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++child_process_launches_;
+  if (process_type == "gpu-process") {
+    ++gpu_process_launches_;
+    last_gpu_command_line_ = command_line;
+  } else if (process_type == "renderer") {
+    ++render_process_launches_;
+  }
+}
+
 std::string ProofMetrics::FormatLine() const {
   std::lock_guard<std::mutex> lock(mutex_);
   const auto requests = Summarize(requests_);
@@ -116,6 +156,7 @@ std::string ProofMetrics::FormatLine() const {
       << " raf_hz=" << raf_.rate_hz
       << " paint_hz=" << paints.rate_hz
       << " accelerated_hz=" << accelerated.rate_hz
+      << " gpu_launches=" << gpu_process_launches_
       << " d3d_opened=" << (d3d_opened_ ? "true" : "false")
       << " size=" << actual_width_ << "x" << actual_height_;
   return out.str();
@@ -154,6 +195,18 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
       << "  \"acceleratedPaint\":" << JsonTiming(accelerated).substr(0, JsonTiming(accelerated).size() - 1)
       << ",\"dirtyRects\":" << accelerated_dirty_rects_
       << ",\"handleChanges\":" << handle_changes_ << "},\n"
+      << "  \"presentedFrames\":" << presented_frames_ << ",\n"
+      << "  \"gpuDiagnostics\":{\"childProcessLaunches\":"
+      << child_process_launches_ << ",\"gpuProcessLaunches\":"
+      << gpu_process_launches_ << ",\"renderProcessLaunches\":"
+      << render_process_launches_ << ",\"gpuProcessObserved\":"
+      << (gpu_process_launches_ > 0 ? "true" : "false")
+      << ",\"acceleratedCallbackObserved\":"
+      << (accelerated.callbacks > 0 ? "true" : "false")
+      << ",\"d3dOpenSharedResourceSucceeded\":"
+      << (d3d_opened_ ? "true" : "false")
+      << ",\"lastGpuCommandLine\":\"" << JsonString(last_gpu_command_line_)
+      << "\"},\n"
       << "  \"d3d11\":{\"attempted\":" << (d3d_attempted_ ? "true" : "false")
       << ",\"opened\":" << (d3d_opened_ ? "true" : "false")
       << ",\"hresult\":" << d3d_result_

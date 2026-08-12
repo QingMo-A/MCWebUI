@@ -49,8 +49,9 @@ const char kProbe[] = R"JS((()=>{
 }
 
 ProofClient::ProofClient(int width, int height, ProofMetrics* metrics,
-                         bool animate, ClosedCallback closed_callback)
-    : metrics_(metrics), render_handler_(new ProofRenderHandler(width, height, metrics)),
+                         bool animate, ProofSimulator* simulator,
+                         ClosedCallback closed_callback)
+    : metrics_(metrics), render_handler_(new ProofRenderHandler(width, height, metrics, simulator)),
       closed_callback_(std::move(closed_callback)), animate_(animate) {}
 
 void ProofClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {

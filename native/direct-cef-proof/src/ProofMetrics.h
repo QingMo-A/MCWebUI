@@ -25,6 +25,9 @@ class ProofMetrics final {
   void RecordAcceleratedPaint(std::size_t dirty_rect_count, void* handle);
   void RecordD3D(bool opened, unsigned width, unsigned height, unsigned format,
                  unsigned sample_count, long result);
+  void RecordPresented();
+  void RecordChildProcess(const std::string& process_type,
+                          const std::string& command_line);
   void RecordRaf(std::uint64_t callbacks, double rate_hz, double median_ms,
                  double p95_ms, double max_ms);
   void RecordLoad(bool success);
@@ -50,7 +53,12 @@ class ProofMetrics final {
   std::uint64_t estimated_bytes_ = 0;
   std::uint64_t accelerated_dirty_rects_ = 0;
   std::uint64_t handle_changes_ = 0;
+  std::uint64_t presented_frames_ = 0;
   void* last_handle_ = nullptr;
+  std::uint64_t child_process_launches_ = 0;
+  std::uint64_t gpu_process_launches_ = 0;
+  std::uint64_t render_process_launches_ = 0;
+  std::string last_gpu_command_line_;
   int actual_width_ = 0;
   int actual_height_ = 0;
   bool load_finished_ = false;

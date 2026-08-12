@@ -52,6 +52,7 @@ int main(int argc, char* argv[]) {
   const int target_hz = ReadIntSwitch(command_line, "target-hz", 30);
   const int duration_ms = ReadIntSwitch(command_line, "duration-ms", 5000);
   const bool accelerated = command_line->HasSwitch("accelerated");
+  const bool simulator = command_line->HasSwitch("simulator");
   const bool animate = !command_line->HasSwitch("idle");
   const std::string output = ReadSwitch(command_line, "output", "direct-cef-proof-result.json");
 
@@ -73,7 +74,7 @@ int main(int argc, char* argv[]) {
   CefString(&settings.log_file) = (proof_runtime / L"cef.log").wstring();
 
   CefRefPtr<ProofApp> app = new ProofApp(url, mode, width, height, target_hz,
-                                        duration_ms, accelerated, animate, output);
+                                        duration_ms, accelerated, animate, simulator, output);
   if (!CefInitialize(main_args, settings, app, nullptr)) {
     std::cerr << "[direct-cef-proof] CefInitialize failed" << std::endl;
     return 2;
