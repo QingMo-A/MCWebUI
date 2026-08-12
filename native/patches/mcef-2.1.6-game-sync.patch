@@ -35,10 +35,10 @@ index 21eb553..6e2b66f 100644
          browser.createImmediately();
          browser.resize(width, height);
 diff --git a/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java b/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java
-index 828b795..0ce2a56 100644
+index 828b795..c374df4 100644
 --- a/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java
 +++ b/common/src/main/java/com/cinemamod/mcef/MCEFBrowser.java
-@@ -85,13 +85,29 @@ public class MCEFBrowser extends CefBrowserOsr {
+@@ -85,7 +85,13 @@ public class MCEFBrowser extends CefBrowserOsr {
      protected boolean popupDrawn = false;
  
      public MCEFBrowser(MCEFClient client, String url, boolean transparent) {
@@ -53,22 +53,6 @@ index 828b795..0ce2a56 100644
          renderer = new MCEFRenderer(transparent);
          cursorChangeListener = (cefCursorID) -> setCursor(CefCursorType.fromId(cefCursorID));
  
-         Minecraft.getInstance().submit(renderer::initialize);
-     }
- 
-+    /** Request a frame from CEF when this browser was created in proof mode. */
-+    public void sendExternalBeginFrame() {
-+        super.sendExternalBeginFrame();
-+    }
-+
-+    /** Expose the JCEF capability without relying on reflection. */
-+    public boolean supportsExternalBeginFrame() {
-+        return super.supportsExternalBeginFrame();
-+    }
-+
-     public MCEFRenderer getRenderer() {
-         return renderer;
-     }
 diff --git a/common/src/main/java/com/cinemamod/mcef/mixins/CefDownloadMixin.java b/common/src/main/java/com/cinemamod/mcef/mixins/CefDownloadMixin.java
 index 2d92cd4..c51e652 100644
 --- a/common/src/main/java/com/cinemamod/mcef/mixins/CefDownloadMixin.java

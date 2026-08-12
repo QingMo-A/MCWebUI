@@ -36,9 +36,12 @@ if (framePacingProof.get()) {
     if (patchedMcefJar == null || !file(patchedMcefJar).isFile()) {
         throw new GradleException('mcwebuiFramePacingProof=true requires MCWEBUI_PATCHED_MCEF_JAR to point to a matched patched MCEF jar (JCEF+MCEF patches under native/patches).')
     }
+    def patchedNativePlatformDir = patchedNativeDir == null ? null : file(new File(patchedNativeDir, 'windows_amd64'))
+    def patchedNativeFile = patchedNativePlatformDir == null ? null : file(new File(patchedNativePlatformDir, patchedNativeName))
+    def patchedCefFile = patchedNativePlatformDir == null ? null : file(new File(patchedNativePlatformDir, 'libcef.dll'))
     if (patchedNativeDir == null ||
-            !file(patchedNativeDir, 'windows_amd64/' + patchedNativeName).isFile() ||
-            !file(patchedNativeDir, 'windows_amd64/libcef.dll').isFile()) {
+            !patchedNativeFile.isFile() ||
+            !patchedCefFile.isFile()) {
         throw new GradleException("mcwebuiFramePacingProof=true requires MCWEBUI_PATCHED_NATIVE_DIR/windows_amd64 to contain $patchedNativeName and its matching CEF runtime siblings.")
     }
     if (patchedMcefSha == null || patchedNativeSha == null) {
@@ -46,7 +49,7 @@ if (framePacingProof.get()) {
     }
     def sha256 = { File input -> java.security.MessageDigest.getInstance('SHA-256').digest(input.bytes).encodeHex().toString().toUpperCase(Locale.ROOT) }
     def actualMcefSha = sha256(file(patchedMcefJar))
-    def actualNativeSha = sha256(file(patchedNativeDir, 'windows_amd64/' + patchedNativeName))
+    def actualNativeSha = sha256(patchedNativeFile)
     if (!actualMcefSha.equalsIgnoreCase(patchedMcefSha) || !actualNativeSha.equalsIgnoreCase(patchedNativeSha)) {
         throw new GradleException("Proof artifact SHA-256 mismatch (MCEF=$actualMcefSha, JCEF=$actualNativeSha). Refusing to mix unmatched Java/native artifacts.")
     }
@@ -56,7 +59,7 @@ if (framePacingProof.get()) {
         testCompileOnly files(patchedMcefJar)
     }
     tasks.withType(JavaExec).configureEach {
-        jvmArgs "-Dmcwebui.framePacingProof=true", "-Dmcwebui.mcef.proof.nativeDir=${file(patchedNativeDir, 'windows_amd64').absolutePath}"
+        jvmArgs "-Dmcwebui.framePacingProof=true", "-Dmcwebui.mcef.proof.nativeDir=${patchedNativePlatformDir.absolutePath}"
     }
 } else {
     dependencies {
