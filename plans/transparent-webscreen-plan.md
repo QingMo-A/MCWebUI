@@ -41,12 +41,15 @@ Minecraft integration work is authorized:
    measured separately at 60/120/144 targets with median/P95/P99 or max jank.
 
 The current modern CEF 144 result passes gates 1--3 for GPU submission: the
-latest full matrix opened accelerated handles through D3D11.1
-`OpenSharedResource1` and presented 133 fullscreen GPU frames at 54.85/s over
-a moving native background (an earlier standalone run presented 158 at
-54.32/s). Visual alpha inspection, real input, and physical display scanout
-remain **NOT TESTED**. Do not claim the full transparent WebScreen route until
-those checks pass; do not add a CPU readback workaround.
+decoupled three-slot mailbox repeatedly opened accelerated handles through
+D3D11.1 `OpenSharedResource1`, copied into host-owned textures, and presented
+at independent 60/120/144 consumer rates over a moving native background.
+Producer delivery remained approximately 54--58/s (the 144 run measured 456
+copies/published generations at 56.15/s), while the consumer made 1,182
+uncoupled presents at 143.97/s. Visual alpha inspection, real input, and
+physical display scanout remain **NOT TESTED**. Do not claim the full
+transparent WebScreen route until those checks pass; do not add a CPU readback
+workaround.
 
 ## Current isolated findings
 
@@ -59,12 +62,18 @@ those checks pass; do not add a CPU readback workaround.
 - Modern CPU OSR reproduces the approximately 60 paint/s ceiling at 120/144
   requests. Modern accelerated OSR delivers callbacks without CPU paint, and
   D3D11.1 shared-resource opening/present is verified in the simulator.
-- The serialized D3D `format: 1` is the CEF enum
-  `CEF_COLOR_TYPE_BGRA_8888`; it is not a DXGI format. Exact
-  `ID3D11_TEXTURE2D_DESC::Format` is **NOT MEASURED** by the current JSON.
+- The mailbox JSON records CEF color type 1 (`CEF_COLOR_TYPE_BGRA_8888`) and
+  exact D3D descriptor format 87 (`DXGI_FORMAT_B8G8R8A8_UNORM`), with CPU
+  access flags 0. This is resource metadata, not an alpha-pixel result.
 - GPU process launch evidence and CEF logs are recorded in result JSON. ANGLE
   backend strings, vendor/device identity, utilization, and actual display
   presentation are **NOT MEASURED**.
+
+- The decoupled mailbox is **VERIFIED** for D3D11 submission: a short
+  immediate-context mutex, a three-slot host-owned pool, consumer-slot
+  protection, and an independent `Present(0)`/`Present(1)` loop. The producer
+  never waits on VSync, a GPU query, or a CPU readback. This is a pacing proof,
+  not a claim that CEF can generate 120/144 distinct browser frames.
 
 ## Future implementation boundary
 

@@ -136,6 +136,19 @@ Important review findings at this checkpoint:
 7. The current performance checkpoint preserves MCEF's persistent texture/dirty-rectangle cache, removes the playground's 800 ms diagnostics repaint loop, uses GUI-sized opaque browser surfaces by default, and exposes `config/mcwebui-client.toml` `followGuiSize`. Framebuffer mode uses `round(guiSize * guiScale)` per axis as the window changes and maps each input axis by ratio. The bundled MCEF/JCEF 2.1.6 API has no public windowless frame-rate setter, so CEF's default 30 FPS OSR ceiling remains a documented visual limit rather than being bypassed with reflection.
 8. The GAME_SYNC/frame-pacing checkpoint is captured in `plans/frame-pacing-plan.md`. Exact source patches add an opt-in JCEF/MCEF external-begin-frame path, and the Windows amd64 JCEF JNI wrapper builds against CEF 116/5845. A standalone ModDevGradle proof builder now creates the patched MCEF NeoForge jar from exact MCEF/JCEF revisions (PROOF B); no patched client run or fabricated FPS result is permitted.
 
+9. The 2026-08-12 Direct CEF checkpoint adds an isolated modern CEF 144
+   three-slot GPU mailbox. `OnAcceleratedPaint` performs
+   `OpenSharedResource1` plus a host-owned `CopyResource` and publishes a
+   generation; an independent consumer composites and calls `Present(0)` or
+   `Present(1)` outside the producer lock. Clean 1280x720 runs reached
+   independent 60/120/144 presents while accelerated delivery remained about
+   54--58/s. The exact observed descriptor was BGRA8 (`DXGI` numeric 87), with
+   CPU access flags 0. CEF 5845 remains the CPU-only historical baseline.
+   Producer/present accounting, ten serial lifecycle runs, and local Gradle
+   frontend/target verification passed. Alpha-pixel inspection and real
+   pointer/keyboard/scroll input remain **NOT TESTED**; do not integrate this
+   proof into Minecraft or claim 120/144 distinct browser generations.
+
 ### Near-term project direction
 
 Before adding a large component library, finish the real transport and make the playground a **component showcase + integration laboratory**.

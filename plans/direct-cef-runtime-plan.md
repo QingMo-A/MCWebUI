@@ -75,9 +75,53 @@ The transparent D3D simulator's GPU submission/present is **VERIFIED**; alpha
 pixel inspection, real mouse/keyboard input forwarding, and Minecraft
 integration are **NOT TESTED**. No CPU readback fallback is used or claimed.
 
-Status: **VERIFIED CPU OSR; VERIFIED external pacing improvement with an
-approximately 60 Hz browser/paint ceiling; FAILED accelerated callback on this
-CEF 5845 machine**.
+## 2026-08-12 decoupled mailbox checkpoint
+
+The coupled simulator remains the historical baseline: it opens, composites,
+and calls `Present(1)` from the accelerated paint callback. The mailbox path
+separates those responsibilities. `OnAcceleratedPaint` opens the shared CEF
+resource, copies it into one of three host-owned D3D11 textures, publishes a
+generation, and returns. An independent consumer selects the latest complete
+slot, composites it over the moving background, and presents at the requested
+rate (`Present(0)` uncoupled or `Present(1)` VSync reference).
+
+The producer and consumer serialize the D3D11 immediate context with a short
+mutex and rely on command order for GPU copy/draw ordering. The producer uses
+`try_lock`; a busy context drops immediately without sleeping, query/event
+waits, flushing, presenting, or CPU readback. `Present` is outside the mutex,
+and slot selection protects the current consumer slot, so the callback is
+never coupled to VSync. This is a GPU-only three-slot mailbox.
+
+Clean modern CEF 144 Release x64 measurements at 1280x720 (~8.4 s) were:
+
+| Mode | Requests/s | rAF/s | Accelerated/s | Copy/publish/s | Consumer/present/s | New / repeat / no | Present median / P95 / max (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Mailbox uncoupled 60 | 60.00 | 59.71 | 54.44 | 54.20 | 59.95 / 59.95 | 357 / 129 / 7 | 15.723 / 26.616 / 31.146 |
+| Mailbox uncoupled 120 | 120.07 | 78.42 | 57.89 | 57.78 | 119.98 / 119.99 | 446 / 530 / 10 | 8.692 / 16.992 / 23.029 |
+| Mailbox uncoupled 144 | 143.99 | 86.58 | 57.14 | 56.15 | 143.95 / 143.97 | 440 / 729 / 13 | 5.448 / 16.151 / 21.874 |
+
+`new + repeat + no` always equals `presents`; the lower `new` count at high
+consumer rates is expected repeated presentation of the latest generation,
+not a second producer ceiling. A 1920x1080 uncoupled-60 run recorded 228
+accelerated/copy/published callbacks at 55.02/s and 59.88 presents/s. The
+VSync-60 reference recorded 53.17 copies/published/s and 59.99 `Present(1)`
+calls/s. Ten serial 350 ms modern lifecycles exited 0, loaded successfully,
+preserved accounting, and left no proof processes running. The pinned CEF
+5845 smoke still exits 0 with CPU OnPaint (~55.8/s) and zero accelerated
+callbacks. Local frontend typecheck/build and all Forge/NeoForge tests/builds
+pass; output JARs contain no CEF DLL/EXE/native runtime.
+
+The mailbox descriptor observed is 1280x720, numeric DXGI format 87
+(`DXGI_FORMAT_B8G8R8A8_UNORM`), one mip/array slice, sample count 1, default
+usage, CPU access flags 0; CEF color type is 1 (`CEF_COLOR_TYPE_BGRA_8888`).
+This is descriptor/opening evidence, not alpha pixel inspection. Visual alpha
+and real mouse/keyboard/scroll input remain **NOT TESTED**.
+
+Status: **VERDICT C** — the decoupled GPU mailbox and independent 60/120/144
+consumer/present loop are verified, but accelerated CEF delivery still
+plateaus near 56--58/s on this host. Decoupling removes callback-owned VSync
+coupling; it does not manufacture higher-rate CEF generations. Production
+Minecraft integration remains out of scope until alpha and input gates pass.
 
 ## 1. Motivation
 
@@ -244,10 +288,8 @@ measurement output is committed in this repository.
 
 ## 15. Recommendation
 
-**Verdict B: modern accelerated OSR plus a GPU-only compositor/present loop is
-verified, but high-refresh pacing and transparent/input acceptance remain
-incomplete.** Direct CEF bypasses MCEF/JCEF and provides a usable modern GPU
-shared texture; CPU OSR still plateaus near 55--58 paint/s at 120/144 requests,
-and accelerated callbacks/present measured about 54/s at a 60 target. Keep the
-current MCEF backend and Direct CEF proof isolated until visual alpha and real
-input are separately validated; do not integrate into Minecraft yet.
+**Verdict C: modern accelerated OSR plus a GPU-only mailbox compositor is
+verified, but accelerated CEF delivery remains approximately 56--58/s at
+120/144 requests.** Keep the current MCEF backend and Direct CEF proof
+isolated until visual alpha and real input are separately validated; do not
+integrate into Minecraft yet.
