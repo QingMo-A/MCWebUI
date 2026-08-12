@@ -44,18 +44,19 @@ NeoForge now registers `config/mcwebui-client.toml` with `followGuiSize=true` by
 
 The playground no longer uses a native HTML `select` for the choice sample. CEF OSR could leave that platform popup visible after selection, so the sample now uses an in-page Vue listbox with selection, outside-pointer close, focus restoration, and ARIA behavior. This keeps popup pixels inside the normal browser paint lifecycle.
 
-### GAME_SYNC / frame-pacing feasibility checkpoint (2026-08-11)
+### GAME_SYNC / frame-pacing native checkpoint (2026-08-12)
 
-The requested native frame-pacing path is **VERIFIED PLAN / NO-GO for implementation** at
+The requested native frame-pacing path is now **PROOF C / source-patched with the Windows JCEF wrapper built, runtime incomplete** at
 this dependency line. CEF itself documents `CefBrowserHost::SetWindowlessFrameRate` and
-`SendExternalBeginFrame`, but CinemaMod MCEF/JCEF `2.1.6-1.21.1` exposes neither through
+`SendExternalBeginFrame`; stock CinemaMod MCEF/JCEF `2.1.6-1.21.1` exposes neither through
 its Java/JNI classes or browser-creation settings. The NeoForge Screen therefore keeps
 compositing MCEF's persistent texture each Minecraft render while CEF owns `onPaint`
-scheduling. No Java tick-driven invalidation, callback-buffer retention, reflection,
-private JNI, native binary patch, or generic Chromium switch is safe to add here. The
+scheduling in stock mode. The proof source adds only the explicit JNI route; it does not
+use Java tick-driven invalidation, callback-buffer retention, reflection, a binary edit,
+or a generic Chromium switch. The
 bundled `FrameMetrics` counters do not constitute an FPS benchmark. Gate evidence,
 artifact hashes, and the future supported-wrapper implementation steps are in
-[`plans/frame-pacing-plan.md`](frame-pacing-plan.md).
+[`plans/frame-pacing-plan.md`](frame-pacing-plan.md). Exact JCEF/MCEF source patches and parameterized build scripts are now present. A matching MCEF NeoForge JAR is blocked by the pinned upstream Loom/Gradle compatibility issue, so no GAME_SYNC `runClient`, rAF/paint >30 result, or performance claim is made.
 
 ## 2. Scope freeze
 
