@@ -5,6 +5,12 @@ and input acceptance remain NOT TESTED**.
 This plan describes the target architecture only; it does not change the
 production MCEF backend, default backend, or Gradle dependencies.
 
+The `d992347` high-refresh checkpoint is retained as historical data but is
+**SUPERSEDED / INCONCLUSIVE** for modern CEF above 60 Hz: those runs requested
+120/144 while configuring `windowless_frame_rate=60`. The current proof records
+both requested and configured rates and keeps the CEF 5845 compatibility clamp
+while allowing CEF 144 to use 120/144.
+
 ## Product contract
 
 MCWebUI is a Vue/TypeScript/HTML replacement UI for Minecraft screen-space
@@ -74,6 +80,18 @@ workaround.
   protection, and an independent `Present(0)`/`Present(1)` loop. The producer
   never waits on VSync, a GPU query, or a CPU readback. This is a pacing proof,
   not a claim that CEF can generate 120/144 distinct browser frames.
+
+### High-refresh recheck
+
+At 1280x720 with the same modern CEF 144 accelerated mailbox and external
+BeginFrame, configured 60/120/144 produced approximately 54.6/64.3/64.1
+published generations per second, while independent `Present(0)` reached
+59.9/120.0/144.0. The controlled target-144 A/B was 56.7 published/s at
+configured 60 versus 64.0 published/s at configured 144. The result is
+**VERDICT B**: the old clamp was a real part of the limit, but this host still
+does not produce 120/144 distinct browser generations. Interval summaries and
+the exact requested/configured values are recorded in
+`plans/direct-cef-runtime-plan.md`.
 
 ## Future implementation boundary
 

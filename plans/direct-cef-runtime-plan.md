@@ -7,6 +7,15 @@ texture, and GPU-only simulator present are VERIFIED on this host.** Visual
 alpha inspection and real input forwarding remain **NOT TESTED**. The
 production CEF/MCEF/JCEF configuration is unchanged.
 
+The earlier `d992347` high-refresh measurements requested 120/144 while the
+browser was configured with `windowless_frame_rate=60`; that historical rate
+verdict is **SUPERSEDED / INCONCLUSIVE** for modern CEF above 60 Hz. The proof
+now retains the CEF 5845 compatibility clamp while CEF 144 uses the requested
+target, and every JSON result records `requestedTargetHz` plus
+`configuredWindowlessFrameRate`. A proof-only `--windowless-frame-rate=N`
+override supports controlled A/B runs without changing normal version-based
+behavior.
+
 The selected official automated-build metadata entry is the current stable
 Windows x64 standard binary:
 
@@ -117,11 +126,50 @@ usage, CPU access flags 0; CEF color type is 1 (`CEF_COLOR_TYPE_BGRA_8888`).
 This is descriptor/opening evidence, not alpha pixel inspection. Visual alpha
 and real mouse/keyboard/scroll input remain **NOT TESTED**.
 
-Status: **VERDICT C** — the decoupled GPU mailbox and independent 60/120/144
-consumer/present loop are verified, but accelerated CEF delivery still
-plateaus near 56--58/s on this host. Decoupling removes callback-owned VSync
-coupling; it does not manufacture higher-rate CEF generations. Production
-Minecraft integration remains out of scope until alpha and input gates pass.
+Status: **VERDICT B** — modern CEF 144 configured to the requested target
+exceeds 60 accelerated generations/s but remains well below 120/144 on this
+host. Decoupling removes callback-owned VSync coupling; it does not manufacture
+higher-rate CEF generations. Production Minecraft integration remains out of
+scope until alpha and input gates pass.
+
+### Modern CEF high-refresh verification (2026-08-12)
+
+Clean 1280x720 accelerated mailbox runs used the same external BeginFrame,
+three-slot GPU mailbox, `OpenSharedResource1`/`CopyResource`, uncoupled
+`Present(0)`, and Vue probe. Rates are measured from callback or generation
+timestamps, never inferred from requests.
+
+| Target | Configured OSR Hz | BeginFrame/s | rAF/s | Accelerated/s | GPU copy/s | Published/s | Present/s | New/s | Repeat/s |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 60 | 60 | 60.03 | 59.83 | 55.06 | 54.61 | 54.61 | 59.93 | 49.68 | 10.28 |
+| 120 | 120 | 120.09 | 64.59 | 64.38 | 64.27 | 64.27 | 119.96 | 63.70 | 56.40 |
+| 144 | 144 | 144.10 | 64.69 | 64.42 | 64.09 | 64.09 | 143.98 | 63.43 | 80.58 |
+
+The required A/B held target 144 and all other switches constant:
+
+| Target | Configured OSR Hz | BeginFrame/s | rAF/s | Accelerated/s | GPU copy/s | Published/s | Present/s | New/s | Repeat/s |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 144 | 60 | 144.16 | 64.72 | 57.28 | 56.72 | 56.72 | 144.00 | 56.71 | 87.37 |
+| 144 | 144 | 144.05 | 64.44 | 64.35 | 64.02 | 64.02 | 143.92 | 63.56 | 80.39 |
+
+The 144/144 repeat measured 144.00 BeginFrame/s, 64.45 rAF/s, 64.55
+accelerated/s, 64.44 copy/publish/s, and 144.01 Present/s. For the primary
+144/144 run, accelerated interval median/P95/max was 15.484/16.659/31.334 ms
+and published interval median/P95/max was 15.518/16.979/33.398 ms. The repeat
+measured 15.502/16.719/29.891 ms and 15.533/16.731/29.872 ms respectively.
+The 144/60 run measured accelerated 15.609/31.244/32.840 ms and published
+15.649/31.396/48.032 ms. These are interval summaries, not display scanout.
+
+For completeness, the 60/120/144 source result files were
+`%TEMP%\\mcwebui-rate-smoke\\m60.json`, `m120.json`, and `m144.json`; the A/B
+files were `%TEMP%\\mcwebui-rate-ab\\target144-config60.json` and
+`target144-config144.json`. The repeat was
+`target144-config144-repeat.json` in the same directory.
+
+Conclusion: **Verdict B**. Removing the old 60 Hz configuration ceiling raises
+CEF delivery from the high-50s into the low/mid-60s, but this environment still
+has an approximately 64 Hz accelerated-generation ceiling. It does not prove
+120 or 144 distinct browser generations.
 
 ## 1. Motivation
 
@@ -288,8 +336,8 @@ measurement output is committed in this repository.
 
 ## 15. Recommendation
 
-**Verdict C: modern accelerated OSR plus a GPU-only mailbox compositor is
-verified, but accelerated CEF delivery remains approximately 56--58/s at
-120/144 requests.** Keep the current MCEF backend and Direct CEF proof
+**Verdict B: modern accelerated OSR plus a GPU-only mailbox compositor is
+verified, and configured high-refresh CEF delivery reaches approximately 64/s
+at 120/144 requests but not 120/144 distinct generations.** Keep the current MCEF backend and Direct CEF proof
 isolated until visual alpha and real input are separately validated; do not
 integrate into Minecraft yet.

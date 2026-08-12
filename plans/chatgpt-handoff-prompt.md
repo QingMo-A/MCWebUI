@@ -103,7 +103,7 @@ After review, give a concrete verdict and normally one autonomous professional C
 
 ## Current checkpoint
 
-Checkpoint date: **2026-08-11**
+Checkpoint date: **2026-08-12**
 
 Historical branch HEAD before this handoff file was added: `2a6fb16f5586e2809c3313d943b01fee8402c3dd` (`clarify neoforge scope checkpoint`). Always re-fetch current `bridge` before acting.
 
@@ -148,6 +148,19 @@ Important review findings at this checkpoint:
    frontend/target verification passed. Alpha-pixel inspection and real
    pointer/keyboard/scroll input remain **NOT TESTED**; do not integrate this
    proof into Minecraft or claim 120/144 distinct browser generations.
+
+10. The modern CEF high-refresh recheck supersedes the earlier rate conclusion
+    for this question. Checkpoint `d992347` requested 120/144 but configured
+    `windowless_frame_rate=60`, so its high-refresh result is retained as
+    **SUPERSEDED / INCONCLUSIVE**, not deleted. The isolated proof now keeps the
+    CEF 5845 1..60 compatibility clamp and uses the requested target for CEF
+    144, recording `requestedTargetHz` and
+    `configuredWindowlessFrameRate` in each JSON result. At 1280x720,
+    configured 60/120/144 yielded approximately 54.6/64.3/64.1 published
+    generations/s and 59.9/120.0/144.0 independent presents/s. The required
+    target-144 A/B yielded 56.7 published/s at configured 60 versus 64.0 at
+    configured 144. This is **VERDICT B**: the old clamp was a real bottleneck,
+    but the host's modern accelerated-generation ceiling remains about 64 Hz.
 
 ### Near-term project direction
 
