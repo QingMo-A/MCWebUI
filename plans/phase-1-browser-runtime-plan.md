@@ -46,7 +46,7 @@ The playground no longer uses a native HTML `select` for the choice sample. CEF 
 
 ### GAME_SYNC / frame-pacing native checkpoint (2026-08-12)
 
-The requested native frame-pacing path is now **PROOF C / source-patched with the Windows JCEF wrapper built, runtime incomplete** at
+The requested native frame-pacing path is now **PROOF B / standalone patched MCEF artifact built, runtime incomplete** at
 this dependency line. CEF itself documents `CefBrowserHost::SetWindowlessFrameRate` and
 `SendExternalBeginFrame`; stock CinemaMod MCEF/JCEF `2.1.6-1.21.1` exposes neither through
 its Java/JNI classes or browser-creation settings. The NeoForge Screen therefore keeps
@@ -56,7 +56,7 @@ use Java tick-driven invalidation, callback-buffer retention, reflection, a bina
 or a generic Chromium switch. The
 bundled `FrameMetrics` counters do not constitute an FPS benchmark. Gate evidence,
 artifact hashes, and the future supported-wrapper implementation steps are in
-[`plans/frame-pacing-plan.md`](frame-pacing-plan.md). Exact JCEF/MCEF source patches and parameterized build scripts are now present. A matching MCEF NeoForge JAR is blocked by the pinned upstream Loom/Gradle compatibility issue, so no GAME_SYNC `runClient`, rAF/paint >30 result, or performance claim is made.
+[`plans/frame-pacing-plan.md`](frame-pacing-plan.md). Exact JCEF/MCEF source patches and parameterized build scripts are now present. The historical root Loom build remains blocked, so a standalone ModDevGradle proof builder now creates the matching MCEF NeoForge JAR from exact external source revisions. One proof `runClient` launch accepted the patched native directory and reached CEF `INITIALIZED`; the automated desktop session did not reach F8, so GAME_SYNC capability, rAF/paint >30, and performance remain **NOT VERIFIED**.
 
 ## 2. Scope freeze
 

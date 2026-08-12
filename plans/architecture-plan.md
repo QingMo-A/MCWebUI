@@ -333,7 +333,7 @@ The stock NeoForge/MCEF implementation does not provide a supported game-synchro
 frame clock. Native CEF documents `SetWindowlessFrameRate` and
 `SendExternalBeginFrame`, but the bundled CinemaMod JCEF/MCEF Java and JNI surface does not
 expose either operation or the required browser-creation flags. See
-[`plans/frame-pacing-plan.md`](frame-pacing-plan.md) for the PROOF C checkpoint, exact
+[`plans/frame-pacing-plan.md`](frame-pacing-plan.md) for the PROOF B checkpoint, exact
 source patches, optional backend-neutral capability, Windows wrapper build, and the
 conditions for completing runtime proof; do not infer an FPS improvement from the
 Minecraft render loop alone.

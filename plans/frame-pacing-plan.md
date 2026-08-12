@@ -1,8 +1,8 @@
 # Windows amd64 GAME_SYNC native proof
 
-Status: **PROOF C — source patches and the JCEF native wrapper build; paired MCEF/runtime proof remains incomplete**
+Status: **PROOF B — standalone patched MCEF NeoForge artifact built; client/runtime FPS proof remains incomplete**
 
-Execution baseline: `be66c6f1381fa7d0a13bfbe73e1d5240855b131e` on `bridge`.
+Execution baseline: `7416e2f9bae7db4c6dc5102daf4aa06c4b24fb17` on `bridge`.
 The pre-existing untracked root `web/` was left untouched.
 
 ## Result
@@ -23,12 +23,14 @@ Minecraft's render thread are posted non-blockingly to CEF's UI thread. Stock so
 dependencies remain callback-driven; proof mode is opt-in and rejects missing or mismatched
 JAR/native hashes.
 
-This run did **not** produce a patched MCEF NeoForge JAR. The pinned upstream combines
-Fabric Loom `1.7-SNAPSHOT` with Gradle 8.8: that wrapper cannot select the current plugin
-variant, while Gradle 8.13 reaches a Loom/Gradle Problems API incompatibility. Changing the
-pinned source revision or plugin line solely to force a green build would invalidate the
-proof baseline. Consequently `runClient`, rAF/paint >30, 60/120/unlimited comparisons,
-idle paint behavior, and Minecraft performance impact are **NOT VERIFIED**.
+The historical MCEF root build still combines Fabric Loom `1.7-SNAPSHOT` with Gradle 8.8 and
+is not used. Instead, `scripts/frame-proof/build-mcef-standalone.ps1` generates a temporary
+NeoForge ModDevGradle 2.0.141 project which compiles the exact external MCEF/JCEF source
+checkouts and applies only the committed GAME_SYNC patches. The source revisions and runtime
+Java behavior are unchanged. This produced a patched NeoForge jar (PROOF B), and a proof
+`runClient` reached Minecraft with patched MCEF/JCEF and CEF initialized. F8 interaction,
+rAF/paint >30, 60/120/unlimited comparisons, idle paint behavior, and Minecraft performance
+impact are still **NOT VERIFIED**.
 
 ## Exact baseline and artifacts
 
@@ -39,12 +41,13 @@ idle paint behavior, and Minecraft performance impact are **NOT VERIFIED**.
   `a78e832f9f13c2c688caea3d04d8b84fcd238d94`.
 - CEF `116.0.27+gd8c85ac+chromium-116.0.5845.190` binary SDK, SHA-256
   `65FDB9117AE8578F2C3E208AB5EEE7A19A1E4F83EECB3D0CB712AB87E128D0A1`.
-- Patched JCEF Java proof JAR, SHA-256
-  `8E6678AE346859ADF3041DB185D3056B983F4E87CBFE1772007C594C461D132A`.
+- Patched JCEF Java proof JAR, SHA-256 `A2536340224814F74820C4C39E060B8B0E6E067C35AAC849B43E8F40327D7BD0`.
 - Patched Windows amd64 `jcef.dll`, SHA-256
   `E893C5A9AEA5C4230820DB564FD92C37D757B012EB359F14E5F647464F3FF1CC`.
 - Reused stock `libcef.dll`, SHA-256
   `BF939EFEB24D668FAF844CBD3B5ADD5EFC22878094F045289FFD9D24832B94E8`.
+- Standalone patched MCEF NeoForge proof JAR, source `c89e242`, SHA-256
+  `1519223E9780BEF8AB3FAD45D5FAC625656CB59E0C63BAFFCA373CD02A2C1677`, 207 entries.
 
 No Chromium/CEF source build occurred. Only `libcef_dll_wrapper` and JCEF JNI were compiled.
 The toolchain was Visual Studio Community 18.7.3, MSVC 19.51.36248, Windows SDK
@@ -58,7 +61,8 @@ The toolchain was Visual Studio Community 18.7.3, MSVC 19.51.36248, Windows SDK
 - `native/patches/mcef-2.1.6-game-sync.patch`
 - `scripts/frame-proof/prepare-cef-sdk.ps1`
 - `scripts/frame-proof/build-jcef-proof.cmd`
-- `scripts/frame-proof/build-mcef-proof.ps1`
+- `scripts/frame-proof/build-mcef-proof.ps1` (historical root-build diagnostic)
+- `scripts/frame-proof/build-mcef-standalone.ps1` (reproducible proof builder)
 - `native/README.md`
 
 Both source patches apply cleanly to fresh exact checkouts. No source checkout, SDK,
@@ -98,6 +102,7 @@ $env:MCWEBUI_PATCHED_JCEF_SHA256 = '<jcef.dll sha256>'
 .\gradlew.bat :targets:neoforge-1.21.1:runClient -PmcwebuiFramePacingProof=true --no-daemon
 ```
 
+The standalone artifact is intentionally external and is not copied into the repository.
 Without all four values, proof configuration fails intentionally. Normal builds do not
 require local artifacts and continue using the official CinemaMod coordinates.
 
