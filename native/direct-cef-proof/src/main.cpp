@@ -50,6 +50,10 @@ int main(int argc, char* argv[]) {
   const int width = ReadIntSwitch(command_line, "width", 1280);
   const int height = ReadIntSwitch(command_line, "height", 720);
   const int target_hz = ReadIntSwitch(command_line, "target-hz", 30);
+  const int windowless_frame_rate_override = command_line->HasSwitch(
+      "windowless-frame-rate")
+      ? ReadIntSwitch(command_line, "windowless-frame-rate", 0)
+      : 0;
   const int duration_ms = ReadIntSwitch(command_line, "duration-ms", 5000);
   const bool accelerated = command_line->HasSwitch("accelerated");
   const bool simulator_mailbox = command_line->HasSwitch("simulator-mailbox");
@@ -79,7 +83,8 @@ int main(int argc, char* argv[]) {
 
   CefRefPtr<ProofApp> app = new ProofApp(url, mode, width, height, target_hz,
                                         duration_ms, accelerated, animate, simulator,
-                                        simulator_mailbox, present_mode, output);
+                                        simulator_mailbox, present_mode, output,
+                                        windowless_frame_rate_override);
   if (!CefInitialize(main_args, settings, app, nullptr)) {
     std::cerr << "[direct-cef-proof] CefInitialize failed" << std::endl;
     return 2;

@@ -8,10 +8,27 @@
 
 #include "include/cef_browser.h"
 #include "include/cef_command_line.h"
+#include "include/cef_version.h"
 #include "include/internal/cef_types_win.h"
 #include "include/wrapper/cef_helpers.h"
 
 namespace {
+// CEF 5845 (and the older CEF APIs it represents) documented a 60 Hz
+// windowless-rendering ceiling. Modern CEF removed that compatibility limit;
+// keep the legacy clamp for old SDKs while allowing the requested rate on
+// newer SDKs (including the pinned CEF 144 proof build).
+int ConfigureWindowlessFrameRate(int requested_hz, bool windowed,
+                                 const std::string& mode,
+                                 int override_hz) {
+  if (windowed || mode == "backend-default") return 0;
+  const int effective_hz = override_hz > 0 ? override_hz : requested_hz;
+#if CEF_VERSION_MAJOR >= 144
+  return std::max(1, effective_hz);
+#else
+  return std::clamp(effective_hz, 1, 60);
+#endif
+}
+
 std::string ChildProcessSwitchSummary(CefRefPtr<CefCommandLine> command_line) {
   CefCommandLine::SwitchMap switches;
   command_line->GetSwitches(switches);
@@ -36,10 +53,12 @@ std::string ChildProcessSwitchSummary(CefRefPtr<CefCommandLine> command_line) {
 ProofApp::ProofApp(std::string url, std::string mode, int width, int height,
                    int target_hz, int duration_ms, bool accelerated,
                    bool animate, bool simulator, bool mailbox,
-                   std::string present_mode, std::string output_path)
+                   std::string present_mode, std::string output_path,
+                   int windowless_frame_rate_override)
     : url_(std::move(url)), mode_(std::move(mode)), width_(width), height_(height),
       target_hz_(target_hz), duration_ms_(duration_ms), accelerated_(accelerated),
       animate_(animate), simulator_(simulator), mailbox_(mailbox),
+      windowless_frame_rate_override_(windowless_frame_rate_override),
       present_mode_(std::move(present_mode)),
       output_path_(std::move(output_path)),
       metrics_(mode_, target_hz_, width_, height_, accelerated_, animate_,
@@ -78,8 +97,11 @@ void ProofApp::OnContextInitialized() {
     window_info.external_begin_frame_enabled = mode_ == "external-begin-frame";
   }
   CefBrowserSettings browser_settings;
-  browser_settings.windowless_frame_rate = (windowed || mode_ == "backend-default") ? 0 :
-      std::clamp(target_hz_, 1, 60);
+  const int configured_windowless_frame_rate =
+      ConfigureWindowlessFrameRate(target_hz_, windowed, mode_,
+                                   windowless_frame_rate_override_);
+  metrics_.RecordWindowlessFrameRate(configured_windowless_frame_rate);
+  browser_settings.windowless_frame_rate = configured_windowless_frame_rate;
   if (simulator_ && !windowed) {
     simulator_renderer_ = std::make_unique<ProofSimulator>(
         host_window_, width_, height_, &metrics_, mailbox_, target_hz_,

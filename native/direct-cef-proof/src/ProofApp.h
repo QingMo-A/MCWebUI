@@ -18,7 +18,8 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
   ProofApp(std::string url, std::string mode, int width, int height,
            int target_hz, int duration_ms, bool accelerated,
            bool animate, bool simulator, bool mailbox,
-           std::string present_mode, std::string output_path);
+           std::string present_mode, std::string output_path,
+           int windowless_frame_rate_override);
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   void OnBeforeChildProcessLaunch(CefRefPtr<CefCommandLine> command_line) override;
   void OnContextInitialized() override;
@@ -33,6 +34,7 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
   const int width_;
   const int height_;
   const int target_hz_;
+  const int windowless_frame_rate_override_;
   const int duration_ms_;
   const bool accelerated_;
   const bool animate_;

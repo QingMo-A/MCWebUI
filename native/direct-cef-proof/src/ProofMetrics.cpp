@@ -25,6 +25,11 @@ void ProofMetrics::RecordFrameRequest() {
   requests_.push_back(Clock::now());
 }
 
+void ProofMetrics::RecordWindowlessFrameRate(int configured_rate_hz) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  configured_windowless_frame_rate_ = configured_rate_hz;
+}
+
 void ProofMetrics::RecordPaint(int width, int height, std::size_t dirty_rect_count) {
   std::lock_guard<std::mutex> lock(mutex_);
   paints_.push_back(Clock::now());
@@ -209,6 +214,7 @@ std::string ProofMetrics::FormatLine() const {
   out << std::fixed << std::setprecision(2)
       << "[direct-cef-proof] mode=" << mode_
       << " target_hz=" << target_hz_
+      << " configured_windowless_frame_rate=" << configured_windowless_frame_rate_
       << " requests_hz=" << requests.rate_hz
       << " raf_hz=" << raf_.rate_hz
       << " paint_hz=" << paints.rate_hz
@@ -250,6 +256,9 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
   out << std::fixed << std::setprecision(3)
       << "{\n  \"schemaVersion\":1,\n  \"mode\":\"" << mode_ << "\",\n"
       << "  \"targetHz\":" << target_hz_ << ",\n"
+      << "  \"requestedTargetHz\":" << target_hz_ << ",\n"
+      << "  \"configuredWindowlessFrameRate\":"
+      << configured_windowless_frame_rate_ << ",\n"
       << "  \"acceleratedRequested\":" << (accelerated_ ? "true" : "false") << ",\n"
       << "  \"animationEnabled\":" << (animate_ ? "true" : "false") << ",\n"
       << "  \"presentationMode\":\"" << presentation_mode_

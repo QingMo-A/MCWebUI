@@ -22,6 +22,7 @@ class ProofMetrics final {
                int configured_height, bool accelerated, bool animate,
                std::string presentation_mode, std::string present_mode);
   void RecordFrameRequest();
+  void RecordWindowlessFrameRate(int configured_rate_hz);
   void RecordPaint(int width, int height, std::size_t dirty_rect_count);
   void RecordAcceleratedPaint(std::size_t dirty_rect_count, void* handle);
   void RecordD3D(bool opened, unsigned width, unsigned height,
@@ -55,6 +56,7 @@ class ProofMetrics final {
   const bool animate_;
   const std::string presentation_mode_;
   const std::string present_mode_;
+  int configured_windowless_frame_rate_ = 0;
   const Clock::time_point started_ = Clock::now();
   mutable std::mutex mutex_;
   std::vector<Clock::time_point> requests_;
