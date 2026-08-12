@@ -1,7 +1,8 @@
 # Transparent WebScreen proof plan
 
-Status: **DIRECT CEF GPU SHARED-TEXTURE + GPU PRESENT VERIFIED; visual alpha
-and input acceptance remain NOT TESTED**.
+Status: **DIRECT CEF GPU SHARED-TEXTURE + GPU PRESENT VERIFIED; automated
+native input routing VERIFIED; end-to-end CEF alpha and manual visual
+acceptance remain NOT TESTED**.
 This plan describes the target architecture only; it does not change the
 production MCEF backend, default backend, or Gradle dependencies.
 
@@ -46,16 +47,43 @@ Minecraft integration work is authorized:
 5. Requests, browser rAF, accelerated callbacks, and D3D-presented frames are
    measured separately at 60/120/144 targets with median/P95/P99 or max jank.
 
-The current modern CEF 144 result passes gates 1--3 for GPU submission: the
-decoupled three-slot mailbox repeatedly opened accelerated handles through
+The current modern CEF 144 result passes gates 1--2 for GPU submission and
+has a synthetic alpha shader check; gate 3 remains pending end-to-end CEF
+pixel inspection. The decoupled three-slot mailbox repeatedly opened
+accelerated handles through
 D3D11.1 `OpenSharedResource1`, copied into host-owned textures, and presented
 at independent 60/120/144 consumer rates over a moving native background.
 Producer delivery remained approximately 54--58/s (the 144 run measured 456
 copies/published generations at 56.15/s), while the consumer made 1,182
-uncoupled presents at 143.97/s. Visual alpha inspection, real input, and
-physical display scanout remain **NOT TESTED**. Do not claim the full
-transparent WebScreen route until those checks pass; do not add a CPU readback
-workaround.
+uncoupled presents at 143.97/s. End-to-end visual alpha inspection and
+physical display scanout remain **NOT TESTED**; native input routing is covered
+by the automated matrix below. Do not claim the full transparent WebScreen
+route until the visual gate passes; do not add a CPU readback workaround.
+
+## Acceptance matrix (2026-08-12)
+
+| Area | Evidence | Result | Boundary |
+| --- | --- | --- | --- |
+| CEF accelerated callback | Modern CEF 144 `OnAcceleratedPaint`, no CPU `OnPaint`, repeated D3D11.1 open | **AUTOMATED PASS** | Direct proof only |
+| GPU mailbox/present | Three host-owned slots, `CopyResource`, independent `Present(0)`, accounting invariant | **AUTOMATED PASS** | Simulator swap chain, not Minecraft |
+| Alpha shader math | 5-pixel BGRA premultiplied synthetic source over blue; 5/5 tolerance checks | **SYNTHETIC PASS** | Does not inspect a real CEF frame |
+| Alpha end-to-end | Real CEF texture pixel capture/visual inspection | **NOT TESTED** | No claim of rounded/transparent visual correctness |
+| Native input routing | Real HWND subclass + native messages; button, checkbox, range, select/focus, Latin text/backspace/arrows, wheel, modal+Escape | **AUTOMATED PASS** | CEF console observations recorded; IME/clipboard not tested |
+| Manual visual acceptance | Human confirms world background, edges, rounded corners, overlays, scanout | **READY FOR USER ACCEPTANCE** | Must be performed interactively; no automated PASS |
+
+The exact runner command is bounded or explicitly interactive:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\direct-cef-proof\run-transparent-webscreen.ps1 `
+  -CefRoot 'F:\Temp\cef-modern-144\cef_binary_144.0.33+gcb4715c+chromium-144.0.7559.259_windows64' `
+  -BuildRoot "$env:TEMP\mcwebui-direct-cef-build" -DurationMs 5000 -AutoInput
+```
+
+For a manual run, use `-DurationMs 0` (the runner passes this explicitly),
+omit `-AutoInput`, and close the visible window with Escape. For automated
+input, the second Escape closes the modal and then the browser. The runner
+always cleans up its local HTTP server in `finally`; no unbounded command is
+used in regression tests.
 
 ## Current isolated findings
 

@@ -145,8 +145,11 @@ Important review findings at this checkpoint:
    54--58/s. The exact observed descriptor was BGRA8 (`DXGI` numeric 87), with
    CPU access flags 0. CEF 5845 remains the CPU-only historical baseline.
    Producer/present accounting, ten serial lifecycle runs, and local Gradle
-   frontend/target verification passed. Alpha-pixel inspection and real
-   pointer/keyboard/scroll input remain **NOT TESTED**; do not integrate this
+   frontend/target verification passed. A five-pixel synthetic alpha shader
+   check passed 5/5, and the native HWND-subclass automated input matrix
+   passed (including modal Escape close), but end-to-end CEF alpha pixels,
+   rounded-corner/world visual inspection, IME/clipboard, and physical scanout
+   remain **NOT TESTED / READY FOR USER ACCEPTANCE**. Do not integrate this
    proof into Minecraft or claim 120/144 distinct browser generations.
 
 10. The modern CEF high-refresh recheck supersedes the earlier rate conclusion

@@ -3,8 +3,9 @@
 ## Modern CEF 144 isolated profile (2026-08-12)
 
 Status: **IMPLEMENTED / RUNTIME MEASURED; accelerated callback, D3D11 shared
-texture, and GPU-only simulator present are VERIFIED on this host.** Visual
-alpha inspection and real input forwarding remain **NOT TESTED**. The
+texture, GPU-only simulator present, and automated native input routing are
+VERIFIED on this host.** End-to-end visual alpha inspection and manual visual
+acceptance remain **NOT TESTED / READY FOR USER ACCEPTANCE**. The
 production CEF/MCEF/JCEF configuration is unchanged.
 
 The earlier `d992347` high-refresh measurements requested 120/144 while the
@@ -80,9 +81,14 @@ This is direct CEF process evidence, not a Task Manager inference. Chromium
 GPU utilization, ANGLE vendor/backend strings, GPU memory, and display-present
 cadence remain **NOT MEASURED**.
 
-The transparent D3D simulator's GPU submission/present is **VERIFIED**; alpha
-pixel inspection, real mouse/keyboard input forwarding, and Minecraft
-integration are **NOT TESTED**. No CPU readback fallback is used or claimed.
+The transparent D3D simulator's GPU submission/present is **VERIFIED**. A
+separate 5-pixel synthetic premultiplied-alpha shader check passed 5/5, but it
+is not an end-to-end CEF texture inspection. Native HWND-subclass input was
+automated against the real loaded Vue page (button, checkbox, range, select,
+focus, Latin text/backspace/arrows, wheel, modal and two-stage Escape); IME,
+clipboard, physical display scanout, rounded-corner visual inspection, and
+Minecraft integration remain **NOT TESTED**. No CPU readback fallback is used
+or claimed.
 
 ## 2026-08-12 decoupled mailbox checkpoint
 
