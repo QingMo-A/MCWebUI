@@ -7,7 +7,8 @@ param(
     [int]$Width = 1280,
 [int]$Height = 720,
 [switch]$IncludeAccelerated,
-[switch]$IncludeSimulator
+[switch]$IncludeSimulator,
+[switch]$IncludeMailbox
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,14 +32,28 @@ if ($IncludeAccelerated) {
     $runs += @{ Name = 'accelerated-60'; Args = @('--mode=external-begin-frame', '--target-hz=60', '--accelerated') }
 }
 if ($IncludeSimulator) {
-    $runs += @{ Name = 'simulator-60'; Args = @('--mode=external-begin-frame', '--target-hz=60', '--accelerated', '--simulator') }
+    $runs += @{ Name = 'simulator-coupled-60'; Args = @('--mode=external-begin-frame', '--target-hz=60', '--accelerated', '--simulator-coupled') }
+}
+if ($IncludeMailbox) {
+    foreach ($hz in @(60, 120, 144)) {
+        $runs += @{ Name = "mailbox-uncoupled-$hz"; Args = @('--mode=external-begin-frame', "--target-hz=$hz", '--accelerated', '--simulator-mailbox', '--present-mode=uncoupled') }
+    }
 }
 $runs += @{ Name = 'idle-external-144'; Args = @('--mode=external-begin-frame', '--target-hz=144', '--idle') }
 
 foreach ($run in $runs) {
     $output = Join-Path $ResultRoot ($run.Name + '.json')
-    & $exe @($run.Args) "--duration-ms=$DurationMs" "--width=$Width" "--height=$Height" "--dist=$dist" "--output=$output"
-    if ($LASTEXITCODE -ne 0) { throw "Proof run $($run.Name) failed with exit code $LASTEXITCODE" }
+    # Start the proof as a separately tracked process.  Waiting on the
+    # process object avoids PowerShell returning while CEF child processes are
+    # still unwinding, which can make a rapid matrix reuse the shared cache or
+    # leave a stale parent behind.
+    $argumentList = @($run.Args) + @(
+        "--duration-ms=$DurationMs", "--width=$Width", "--height=$Height",
+        "--dist=$dist", "--output=$output")
+    $process = Start-Process -FilePath $exe -ArgumentList $argumentList -PassThru -Wait -WindowStyle Hidden
+    if ($process.ExitCode -ne 0) {
+        throw "Proof run $($run.Name) failed with exit code $($process.ExitCode)"
+    }
     $result = Get-Content -Raw -LiteralPath $output | ConvertFrom-Json
     # WINDOWED_BASELINE intentionally has no CefRenderHandler surface. It is
     # valid when the browser loaded and browser-side rAF was observed even
@@ -51,8 +66,17 @@ foreach ($run in $runs) {
     if (-not $result.load.success -or $missingSurface) {
         throw "Proof run $($run.Name) completed without a loaded browser surface"
     }
-    if ($run.Name -eq 'simulator-60' -and $result.presentedFrames -le 0) {
+    if (($run.Name -like 'simulator-*' -or $run.Name -like 'mailbox-*') -and $result.presentedFrames -le 0) {
         throw 'Simulator requested but no GPU-presented frames were recorded'
+    }
+    if ($run.Name -like 'mailbox-*' -and
+        ($result.gpuCopies.callbacks -le 0 -or $result.gpuCopiesCompleted.callbacks -le 0 -or
+         $result.publishedGenerations.callbacks -le 0 -or $result.consumerFrames.callbacks -le 0)) {
+        throw "Mailbox run $($run.Name) completed without complete GPU copy/publish/consumer metrics"
+    }
+    if ($run.Name -like 'mailbox-*' -and
+        (-not $result.presentationAccounting.matchesPresentedFrames)) {
+        throw "Mailbox run $($run.Name) has inconsistent presentation accounting"
     }
 }
 
@@ -65,6 +89,12 @@ Get-ChildItem -LiteralPath $ResultRoot -Filter '*.json' | Sort-Object Name | For
         CpuPaintHz = $result.cpuPaint.rateHz
         AcceleratedPaintHz = $result.acceleratedPaint.rateHz
         PresentedFrames = $result.presentedFrames
+        NewPresentedFrames = $result.newGenerationPresentedFrames
+        RepeatedPresentedFrames = $result.repeatedGenerationPresentedFrames
+        NoGenerationPresentedFrames = $result.noGenerationPresentedFrames
+        GpuCopies = $result.gpuCopies.callbacks
+        PublishedGenerations = $result.publishedGenerations.callbacks
+        ConsumerFrames = $result.consumerFrames.callbacks
         D3D11Opened = $result.d3d11.opened
         Load = $result.load.success
     }

@@ -47,8 +47,29 @@ void ProofRenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser>,
   const unsigned info_format = 0;
 #endif
   metrics_->RecordAcceleratedPaint(dirty_rects.size(), shared_handle);
+  if (simulator_ && simulator_->Ready() && simulator_->MailboxMode()) {
+    D3D11_TEXTURE2D_DESC mailbox_desc{};
+    HRESULT mailbox_result = E_INVALIDARG;
+    const bool copied = shared_handle && simulator_->PublishSharedHandle(
+        reinterpret_cast<HANDLE>(shared_handle), &mailbox_desc,
+        &mailbox_result);
+    if (!copied) {
+      metrics_->RecordD3D(false, 0, 0, info_format, 0, 0, 0, 0, 0, 0, 0, 0,
+                          mailbox_result);
+      return;
+    }
+    metrics_->RecordD3D(true, mailbox_desc.Width, mailbox_desc.Height,
+                        info_format, static_cast<unsigned>(mailbox_desc.Format),
+                        mailbox_desc.MipLevels, mailbox_desc.ArraySize,
+                        mailbox_desc.SampleDesc.Count,
+                        static_cast<unsigned>(mailbox_desc.Usage),
+                        mailbox_desc.BindFlags, mailbox_desc.CPUAccessFlags,
+                        mailbox_desc.MiscFlags, mailbox_result);
+    return;
+  }
   if (!shared_handle || !EnsureD3DDevice()) {
-    metrics_->RecordD3D(false, 0, 0, info_format, 0, E_FAIL);
+    metrics_->RecordD3D(false, 0, 0, info_format, 0, 0, 0, 0, 0, 0, 0, 0,
+                        E_FAIL);
     return;
   }
   Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
@@ -64,16 +85,20 @@ void ProofRenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser>,
   // the D3D11 proof operation and is retained as the first compatibility path.
 #endif
   if (FAILED(result)) {
-    metrics_->RecordD3D(false, 0, 0, info_format, 0, result);
+    metrics_->RecordD3D(false, 0, 0, info_format, 0, 0, 0, 0, 0, 0, 0, 0,
+                        result);
     return;
   }
   D3D11_TEXTURE2D_DESC desc{};
   texture->GetDesc(&desc);
   metrics_->RecordD3D(true, desc.Width, desc.Height,
-                      info_format != 0 ? info_format : static_cast<unsigned>(desc.Format),
-                      desc.SampleDesc.Count, result);
-  if (simulator_ && simulator_->Ready() &&
-      simulator_->PresentSharedHandle(reinterpret_cast<HANDLE>(shared_handle))) {
-    metrics_->RecordPresented();
+                      info_format, static_cast<unsigned>(desc.Format),
+                      desc.MipLevels, desc.ArraySize, desc.SampleDesc.Count,
+                      static_cast<unsigned>(desc.Usage), desc.BindFlags,
+                      desc.CPUAccessFlags, desc.MiscFlags, result);
+  if (simulator_ && simulator_->Ready()) {
+    // Legacy coupled mode is retained as a reference: the callback opens
+    // the shared resource and presents it synchronously.
+    simulator_->PresentSharedHandle(reinterpret_cast<HANDLE>(shared_handle));
   }
 }

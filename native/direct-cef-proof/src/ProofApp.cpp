@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include <utility>
 
 #include "include/cef_browser.h"
@@ -34,12 +35,16 @@ std::string ChildProcessSwitchSummary(CefRefPtr<CefCommandLine> command_line) {
 
 ProofApp::ProofApp(std::string url, std::string mode, int width, int height,
                    int target_hz, int duration_ms, bool accelerated,
-                   bool animate, bool simulator, std::string output_path)
+                   bool animate, bool simulator, bool mailbox,
+                   std::string present_mode, std::string output_path)
     : url_(std::move(url)), mode_(std::move(mode)), width_(width), height_(height),
       target_hz_(target_hz), duration_ms_(duration_ms), accelerated_(accelerated),
-      animate_(animate), simulator_(simulator),
+      animate_(animate), simulator_(simulator), mailbox_(mailbox),
+      present_mode_(std::move(present_mode)),
       output_path_(std::move(output_path)),
-      metrics_(mode_, target_hz_, width_, height_, accelerated_, animate_) {}
+      metrics_(mode_, target_hz_, width_, height_, accelerated_, animate_,
+               mailbox_ ? "mailbox" : (simulator_ ? "coupled" : "none"),
+               present_mode_) {}
 
 void ProofApp::OnBeforeChildProcessLaunch(CefRefPtr<CefCommandLine> command_line) {
   CEF_REQUIRE_IO_THREAD();
@@ -76,7 +81,9 @@ void ProofApp::OnContextInitialized() {
   browser_settings.windowless_frame_rate = (windowed || mode_ == "backend-default") ? 0 :
       std::clamp(target_hz_, 1, 60);
   if (simulator_ && !windowed) {
-    simulator_renderer_ = std::make_unique<ProofSimulator>(host_window_, width_, height_);
+    simulator_renderer_ = std::make_unique<ProofSimulator>(
+        host_window_, width_, height_, &metrics_, mailbox_, target_hz_,
+        present_mode_ == "uncoupled");
     if (!simulator_renderer_->Initialize()) {
       std::cerr << "[direct-cef-proof] D3D simulator initialization failed" << std::endl;
       SignalClosed();
@@ -91,6 +98,8 @@ void ProofApp::OnContextInitialized() {
     SignalClosed();
     return;
   }
+  if (simulator_renderer_ && simulator_renderer_->MailboxMode())
+    simulator_renderer_->StartConsumer();
   if (mode_ == "external-begin-frame") {
     scheduler_thread_ = std::thread([this] {
       const auto interval = std::chrono::duration<double>(1.0 / std::max(1, target_hz_));
@@ -113,6 +122,7 @@ void ProofApp::OnContextInitialized() {
 }
 
 void ProofApp::SignalClosed() {
+  if (simulator_renderer_) simulator_renderer_->Stop();
   // OnBeforeClose executes on CEF's UI thread, so the hidden HWND is destroyed
   // on the same thread that created it.
   if (host_window_) DestroyWindow(host_window_);

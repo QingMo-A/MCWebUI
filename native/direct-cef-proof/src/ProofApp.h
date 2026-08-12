@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -16,7 +17,8 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
  public:
   ProofApp(std::string url, std::string mode, int width, int height,
            int target_hz, int duration_ms, bool accelerated,
-           bool animate, bool simulator, std::string output_path);
+           bool animate, bool simulator, bool mailbox,
+           std::string present_mode, std::string output_path);
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   void OnBeforeChildProcessLaunch(CefRefPtr<CefCommandLine> command_line) override;
   void OnContextInitialized() override;
@@ -35,6 +37,8 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
   const bool accelerated_;
   const bool animate_;
   const bool simulator_;
+  const bool mailbox_;
+  const std::string present_mode_;
   const std::string output_path_;
   mutable ProofMetrics metrics_;
   CefRefPtr<ProofClient> client_;

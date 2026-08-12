@@ -11,10 +11,14 @@
 
 ProofMetrics::ProofMetrics(std::string mode, int target_hz,
                            int configured_width, int configured_height,
-                           bool accelerated, bool animate)
+                           bool accelerated, bool animate,
+                           std::string presentation_mode,
+                           std::string present_mode)
     : mode_(std::move(mode)), target_hz_(target_hz),
       configured_width_(configured_width), configured_height_(configured_height),
-      accelerated_(accelerated), animate_(animate) {}
+      accelerated_(accelerated), animate_(animate),
+      presentation_mode_(std::move(presentation_mode)),
+      present_mode_(std::move(present_mode)) {}
 
 void ProofMetrics::RecordFrameRequest() {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -41,7 +45,11 @@ void ProofMetrics::RecordAcceleratedPaint(std::size_t dirty_rect_count, void* ha
 }
 
 void ProofMetrics::RecordD3D(bool opened, unsigned width, unsigned height,
-                             unsigned format, unsigned sample_count, long result) {
+                             unsigned cef_color_type, unsigned dxgi_format,
+                             unsigned mip_levels, unsigned array_size,
+                             unsigned sample_count, unsigned usage,
+                             unsigned bind_flags, unsigned cpu_access_flags,
+                             unsigned misc_flags, long result) {
   std::lock_guard<std::mutex> lock(mutex_);
   d3d_attempted_ = true;
   d3d_result_ = result;
@@ -49,14 +57,58 @@ void ProofMetrics::RecordD3D(bool opened, unsigned width, unsigned height,
     d3d_opened_ = true;
     d3d_width_ = width;
     d3d_height_ = height;
-    d3d_format_ = format;
+    d3d_color_type_ = cef_color_type;
+    d3d_dxgi_format_ = dxgi_format;
+    d3d_mip_levels_ = mip_levels;
+    d3d_array_size_ = array_size;
     d3d_sample_count_ = sample_count;
+    d3d_usage_ = usage;
+    d3d_bind_flags_ = bind_flags;
+    d3d_cpu_access_flags_ = cpu_access_flags;
+    d3d_misc_flags_ = misc_flags;
+  }
+}
+
+void ProofMetrics::RecordGpuCopy() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  gpu_copies_.push_back(Clock::now());
+}
+
+void ProofMetrics::RecordGpuCopyCompleted() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  gpu_copies_completed_.push_back(Clock::now());
+}
+
+void ProofMetrics::RecordPublished() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  published_generations_.push_back(Clock::now());
+}
+
+void ProofMetrics::RecordConsumerFrame() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  consumer_frames_.push_back(Clock::now());
+}
+
+void ProofMetrics::RecordPresent(bool has_generation, bool new_generation) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto now = Clock::now();
+  presents_.push_back(now);
+  ++presented_frames_;
+  if (!has_generation) {
+    ++no_generation_presented_frames_;
+    return;
+  }
+  if (new_generation) {
+    new_generation_presents_.push_back(now);
+    ++new_generation_presented_frames_;
+  } else {
+    repeated_generation_presents_.push_back(now);
+    ++repeated_generation_presented_frames_;
   }
 }
 
 void ProofMetrics::RecordPresented() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  ++presented_frames_;
+  RecordPresent(true, true);
 }
 
 void ProofMetrics::RecordRaf(std::uint64_t callbacks, double rate_hz,
@@ -148,6 +200,11 @@ std::string ProofMetrics::FormatLine() const {
   const auto requests = Summarize(requests_);
   const auto paints = Summarize(paints_);
   const auto accelerated = Summarize(accelerated_paints_);
+  const auto copies = Summarize(gpu_copies_);
+  const auto completed_copies = Summarize(gpu_copies_completed_);
+  const auto published = Summarize(published_generations_);
+  const auto consumers = Summarize(consumer_frames_);
+  const auto presents = Summarize(presents_);
   std::ostringstream out;
   out << std::fixed << std::setprecision(2)
       << "[direct-cef-proof] mode=" << mode_
@@ -156,6 +213,11 @@ std::string ProofMetrics::FormatLine() const {
       << " raf_hz=" << raf_.rate_hz
       << " paint_hz=" << paints.rate_hz
       << " accelerated_hz=" << accelerated.rate_hz
+      << " copy_hz=" << copies.rate_hz
+      << " copy_complete_hz=" << completed_copies.rate_hz
+      << " publish_hz=" << published.rate_hz
+      << " consumer_hz=" << consumers.rate_hz
+      << " present_hz=" << presents.rate_hz
       << " gpu_launches=" << gpu_process_launches_
       << " d3d_opened=" << (d3d_opened_ ? "true" : "false")
       << " size=" << actual_width_ << "x" << actual_height_;
@@ -167,6 +229,16 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
   const auto requests = Summarize(requests_);
   const auto paints = Summarize(paints_);
   const auto accelerated = Summarize(accelerated_paints_);
+  const auto copies = Summarize(gpu_copies_);
+  const auto completed_copies = Summarize(gpu_copies_completed_);
+  const auto published = Summarize(published_generations_);
+  const auto consumers = Summarize(consumer_frames_);
+  const auto presents = Summarize(presents_);
+  const auto new_presents = Summarize(new_generation_presents_);
+  const auto repeated_presents = Summarize(repeated_generation_presents_);
+  const std::uint64_t classified_presents =
+      new_generation_presented_frames_ + repeated_generation_presented_frames_ +
+      no_generation_presented_frames_;
   const double duration = std::chrono::duration<double>(Clock::now() - started_).count();
   const std::filesystem::path output(path);
   std::error_code directory_error;
@@ -180,6 +252,8 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
       << "  \"targetHz\":" << target_hz_ << ",\n"
       << "  \"acceleratedRequested\":" << (accelerated_ ? "true" : "false") << ",\n"
       << "  \"animationEnabled\":" << (animate_ ? "true" : "false") << ",\n"
+      << "  \"presentationMode\":\"" << presentation_mode_
+      << "\",\"presentMode\":\"" << present_mode_ << "\",\n"
       << "  \"configuredSize\":{\"width\":" << configured_width_
       << ",\"height\":" << configured_height_ << "},\n"
       << "  \"actualSize\":{\"width\":" << actual_width_
@@ -195,7 +269,21 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
       << "  \"acceleratedPaint\":" << JsonTiming(accelerated).substr(0, JsonTiming(accelerated).size() - 1)
       << ",\"dirtyRects\":" << accelerated_dirty_rects_
       << ",\"handleChanges\":" << handle_changes_ << "},\n"
-      << "  \"presentedFrames\":" << presented_frames_ << ",\n"
+      << "  \"gpuCopies\":" << JsonTiming(copies) << ",\n"
+      << "  \"gpuCopiesCompleted\":" << JsonTiming(completed_copies) << ",\n"
+      << "  \"publishedGenerations\":" << JsonTiming(published) << ",\n"
+      << "  \"consumerFrames\":" << JsonTiming(consumers) << ",\n"
+      << "  \"consumerIterations\":" << JsonTiming(consumers) << ",\n"
+      << "  \"presents\":" << JsonTiming(presents) << ",\n"
+      << "  \"newGenerationPresents\":" << JsonTiming(new_presents) << ",\n"
+      << "  \"repeatedGenerationPresents\":" << JsonTiming(repeated_presents) << ",\n"
+      << "  \"presentedFrames\":" << presented_frames_
+      << ",\"newGenerationPresentedFrames\":" << new_generation_presented_frames_
+      << ",\"repeatedGenerationPresentedFrames\":" << repeated_generation_presented_frames_
+      << ",\"noGenerationPresentedFrames\":" << no_generation_presented_frames_
+      << ",\"presentationAccounting\":{\"classifiedFrames\":"
+      << classified_presents << ",\"matchesPresentedFrames\":"
+      << (classified_presents == presented_frames_ ? "true" : "false") << "},\n"
       << "  \"gpuDiagnostics\":{\"childProcessLaunches\":"
       << child_process_launches_ << ",\"gpuProcessLaunches\":"
       << gpu_process_launches_ << ",\"renderProcessLaunches\":"
@@ -211,6 +299,14 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
       << ",\"opened\":" << (d3d_opened_ ? "true" : "false")
       << ",\"hresult\":" << d3d_result_
       << ",\"width\":" << d3d_width_ << ",\"height\":" << d3d_height_
-      << ",\"format\":" << d3d_format_ << ",\"sampleCount\":" << d3d_sample_count_ << "}\n}\n";
+      << ",\"cefColorType\":" << d3d_color_type_
+      << ",\"dxgiFormat\":" << d3d_dxgi_format_
+      << ",\"mipLevels\":" << d3d_mip_levels_
+      << ",\"arraySize\":" << d3d_array_size_
+      << ",\"sampleCount\":" << d3d_sample_count_
+      << ",\"usage\":" << d3d_usage_
+      << ",\"bindFlags\":" << d3d_bind_flags_
+      << ",\"cpuAccessFlags\":" << d3d_cpu_access_flags_
+      << ",\"miscFlags\":" << d3d_misc_flags_ << "}\n}\n";
   return true;
 }
