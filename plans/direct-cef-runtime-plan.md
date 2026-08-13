@@ -128,8 +128,9 @@ pass; output JARs contain no CEF DLL/EXE/native runtime.
 The mailbox descriptor observed is 1280x720, numeric DXGI format 87
 (`DXGI_FORMAT_B8G8R8A8_UNORM`), one mip/array slice, sample count 1, default
 usage, CPU access flags 0; CEF color type is 1 (`CEF_COLOR_TYPE_BGRA_8888`).
-This is descriptor/opening evidence, not alpha pixel inspection. Visual alpha
-and real mouse/keyboard/scroll input remain **NOT TESTED**.
+The separate `--alpha-proof` result records real premultiplied CEF BGRA raw
+pixels and fixed-blue GPU composition; native mouse/keyboard/scroll input is
+also automated. Human visual inspection and physical scanout remain manual.
 
 Status: **VERDICT B** — modern CEF 144 configured to the requested target
 exceeds 60 accelerated generations/s but remains well below 120/144 on this
@@ -291,21 +292,22 @@ calls `OpenSharedResource1`, reads the `ID3D11Texture2D` descriptor, and does
 not retain the CEF handle beyond the callback. The sample reports 1280x720,
 serialized `format: 1` is the CEF color enum
 `CEF_COLOR_TYPE_BGRA_8888` (not a DXGI format; DXGI format 1 is not BGRA8).
-The current JSON does not serialize the `ID3D11_TEXTURE2D_DESC::Format`
-numeric value separately, so the exact DXGI format is **NOT MEASURED** in this
-proof. CEF 5845 remains **NOT RUNTIME VERIFIED** for D3D opening because it
-delivered zero accelerated callbacks.
+The JSON serializes `ID3D11_TEXTURE2D_DESC::Format` as numeric `87`
+(`DXGI_FORMAT_B8G8R8A8_UNORM`). CEF 5845 remains CPU-only in this smoke
+because it delivered zero accelerated callbacks.
 
 ## 10. Known limitations
 
 - Windows amd64 only; no production packaging or helper executable split.
-- CSS/direct rAF transform was exercised; Vue reactive stress, automated range
-  dragging, and scroll input are **NOT TESTED** by this host.
+- CSS/direct rAF transform was exercised; automated range dragging, select,
+  text editing, wheel scroll, modal, and two-stage Escape all passed. Vue
+  reactive stress, IME, and clipboard are not part of this proof.
 - No CPU, GPU utilization, memory, power, or frame-present measurements.
 - `file://` is proof-only and does not replace the production `mcui://` scheme.
 - A one-second console aggregate is used instead of per-frame IPC.
-- Adapter identity, alpha pixel correctness, input forwarding, and display
-  scanout/present cadence remain **NOT MEASURED**. The simulator's
+- Adapter identity and physical display scanout/present cadence remain
+  **NOT MEASURED**. Real alpha pixel correctness and input forwarding are
+  measured in the alpha/input proof. The simulator's
   `presentedFrames` counter measures successful DXGI `Present` calls, not
   physical display scanout.
 
@@ -319,11 +321,10 @@ than assigning all subprocess roles to Minecraft's Java executable.
 
 ## 12. D3D/OpenGL next step
 
-Do not implement WGL/DX interop yet. First establish why CEF 5845 returned CPU
-paint with shared textures requested, or compare an isolated newer CEF proof.
-Only after a valid shared handle is repeatedly opened should a separate proof
-evaluate `WGL_NV_DX_interop2`, adapter identity, synchronization, texture pool
-lifetime, and Minecraft render-thread ownership.
+Do not implement WGL/DX interop in this checkpoint. The isolated alpha/input
+proof now authorizes a separate `WGL_NV_DX_interop2` proof to evaluate adapter
+identity, synchronization, texture-pool lifetime, and Minecraft render-thread
+ownership; none of that work is included here.
 
 ## 13. Packaging implications
 
@@ -343,6 +344,6 @@ measurement output is committed in this repository.
 
 **Verdict B: modern accelerated OSR plus a GPU-only mailbox compositor is
 verified, and configured high-refresh CEF delivery reaches approximately 64/s
-at 120/144 requests but not 120/144 distinct generations.** Keep the current MCEF backend and Direct CEF proof
-isolated until visual alpha and real input are separately validated; do not
-integrate into Minecraft yet.
+at 120/144 requests but not 120/144 distinct generations.** Real CEF alpha and
+native input are verified in the isolated proof; manual visual acceptance and
+interop remain separate gates, and no Minecraft integration is included.
