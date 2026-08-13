@@ -146,11 +146,12 @@ Important review findings at this checkpoint:
    CPU access flags 0. CEF 5845 remains the CPU-only historical baseline.
    Producer/present accounting, ten serial lifecycle runs, and local Gradle
    frontend/target verification passed. A five-pixel synthetic alpha shader
-   check passed 5/5, and the native HWND-subclass automated input matrix
-   passed (including modal Escape close), but end-to-end CEF alpha pixels,
-   rounded-corner/world visual inspection, IME/clipboard, and physical scanout
-   remain **NOT TESTED / READY FOR USER ACCEPTANCE**. Do not integrate this
-   proof into Minecraft or claim 120/144 distinct browser generations.
+   check passed 5/5, the real CEF144 premultiplied BGRA raw/composition alpha
+   matrix passed, and the native HWND-subclass automated input matrix passed
+   (including modal Escape close). Rounded-corner/world visual inspection,
+   IME/clipboard, and physical scanout remain **READY FOR USER ACCEPTANCE**.
+   The isolated proof is **READY FOR D3D/OpenGL INTEROP PROOF** only; do not
+   integrate it into Minecraft or claim 120/144 distinct browser generations.
 
 10. The modern CEF high-refresh recheck supersedes the earlier rate conclusion
     for this question. Checkpoint `d992347` requested 120/144 but configured
@@ -164,6 +165,15 @@ Important review findings at this checkpoint:
     target-144 A/B yielded 56.7 published/s at configured 60 versus 64.0 at
     configured 144. This is **VERDICT B**: the old clamp was a real bottleneck,
     but the host's modern accelerated-generation ceiling remains about 64 Hz.
+
+11. The transparent alpha proof is independent of the historical synthetic
+    `alphaAcceptance` field. With `--alpha-proof`, CEF144 receives a transparent
+    `CefBrowserSettings.background_color`; one bounded raw readback per fixed
+    world/alpha sample records premultiplied BGRA, then a fixed-blue GPU shader
+    verifies final composition. JSON records `realCefAlphaAcceptance` and
+    `alphaModel=premultiplied`; all five raw and five composition samples passed
+    on 2026-08-13. CEF5845 compatibility remains build/smoke verified with the
+    1..60 clamp. Human visual acceptance is manual and is not an automated PASS.
 
 ### Near-term project direction
 

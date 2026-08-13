@@ -3,9 +3,9 @@
 ## Modern CEF 144 isolated profile (2026-08-12)
 
 Status: **IMPLEMENTED / RUNTIME MEASURED; accelerated callback, D3D11 shared
-texture, GPU-only simulator present, and automated native input routing are
-VERIFIED on this host.** End-to-end visual alpha inspection and manual visual
-acceptance remain **NOT TESTED / READY FOR USER ACCEPTANCE**. The
+texture, GPU-only simulator present, real CEF alpha composition, and automated
+native input routing are VERIFIED on this host.** Manual visual acceptance
+remains **READY FOR USER ACCEPTANCE**. The
 production CEF/MCEF/JCEF configuration is unchanged.
 
 The earlier `d992347` high-refresh measurements requested 120/144 while the
@@ -67,10 +67,10 @@ The callback handle is reopened only inside its callback and never cached.
 The optional `--simulator` path is **IMPLEMENTED / RUNTIME VERIFIED for GPU
 submission**: a DXGI flip-discard swap chain renders a moving native
 background and samples the CEF texture in a fullscreen pixel shader before
-`Present`. No CPU readback is used. Visual alpha correctness, pixel capture,
-mouse/keyboard forwarding, and interactive slider/scroll checks are **NOT
-TESTED** in this headless run, so this is not yet a full transparent WebScreen
-acceptance proof.
+`Present`. The alpha proof performs only one low-frequency 1x1 staging readback
+per fixed sample, then verifies final fixed-blue GPU composition; it is not a
+per-frame CPU readback workaround. Real native input forwarding and the
+interactive slider/scroll checks are automated in the same isolated proof.
 
 The JSON now includes `gpuDiagnostics`: child-process count, observed GPU and
 renderer launches, the filtered GPU command-line switches, whether an
@@ -82,13 +82,12 @@ GPU utilization, ANGLE vendor/backend strings, GPU memory, and display-present
 cadence remain **NOT MEASURED**.
 
 The transparent D3D simulator's GPU submission/present is **VERIFIED**. A
-separate 5-pixel synthetic premultiplied-alpha shader check passed 5/5, but it
-is not an end-to-end CEF texture inspection. Native HWND-subclass input was
-automated against the real loaded Vue page (button, checkbox, range, select,
-focus, Latin text/backspace/arrows, wheel, modal and two-stage Escape); IME,
-clipboard, physical display scanout, rounded-corner visual inspection, and
-Minecraft integration remain **NOT TESTED**. No CPU readback fallback is used
-or claimed.
+separate 5-pixel synthetic premultiplied-alpha shader check passed 5/5, and
+the real CEF144 raw/composition alpha matrix plus native HWND-subclass input
+matrix passed (including modal and two-stage Escape). IME, clipboard, physical
+display scanout, rounded-corner visual inspection, and Minecraft integration
+remain **READY FOR USER ACCEPTANCE** or out of scope. No per-frame CPU readback
+fallback is used or claimed.
 
 ## 2026-08-12 decoupled mailbox checkpoint
 
