@@ -150,8 +150,10 @@ Important review findings at this checkpoint:
    matrix passed, and the native HWND-subclass automated input matrix passed
    (including modal Escape close). Rounded-corner/world visual inspection,
    IME/clipboard, and physical scanout remain **READY FOR USER ACCEPTANCE**.
-   The isolated proof is **READY FOR D3D/OpenGL INTEROP PROOF** only; do not
-   integrate it into Minecraft or claim 120/144 distinct browser generations.
+   At that checkpoint the isolated proof was **READY FOR D3D/OpenGL INTEROP
+   PROOF** only; checkpoint 12 below records the subsequent standalone
+   interop result. Do not integrate it into Minecraft or claim 120/144
+   distinct browser generations.
 
 10. The modern CEF high-refresh recheck supersedes the earlier rate conclusion
     for this question. Checkpoint `d992347` requested 120/144 but configured
