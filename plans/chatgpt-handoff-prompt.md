@@ -189,6 +189,27 @@ Important review findings at this checkpoint:
     READY FOR USER ACCEPTANCE; do not claim Minecraft/JNI integration. See
     plans/d3d-opengl-interop-plan.md.
 
+13. The 2026-08-13 NeoForge 1.21.1 Direct CEF slice is opt-in only. The
+    default `mcef` backend remains unchanged; `mcwebui.browserBackend=direct-cef`
+    selects an external CEF144 DLL/helper and the proof runner's
+    `mcwebuiDirectCefProof` property removes the MCEF runtime dependency so two
+    process-global CEF versions are never loaded together. Native CEF owns the
+    asynchronous accelerated D3D mailbox, while the target-local surface
+    contract exposes `beginRenderFrame`/`textureId`/`endRenderFrame`,
+    `PREMULTIPLIED` alpha, and `yFlipped` for the Minecraft render thread.
+    Bridge/WebBridge and production packaging remain NOT IMPLEMENTED; the
+    proof URL is local HTTP and the helper path is explicit.
+
+    Native CEF144 lifecycle smoke, Java/NeoForge tests, frontend/all-target
+    builds, and direct class-path startup passed. The bounded run reached the
+    direct backend selection with no MCEF mod, but F8 was observed during the
+    `Minecraft: NeoForge Loading...` title and produced no native diagnostics.
+    Therefore this checkpoint is **VERDICT B**: direct startup and the safe
+    implementation slice are evidenced, while Minecraft F8/native/WGL mailbox
+    rendering, world/alpha visual composition, and scanout remain **READY FOR
+    USER ACCEPTANCE**. Do not call the standalone NVIDIA interop PASS a
+    Minecraft/JNI integration result. See `plans/direct-cef-neoforge-plan.md`.
+
 ### Near-term project direction
 
 Before adding a large component library, finish the real transport and make the playground a **component showcase + integration laboratory**.

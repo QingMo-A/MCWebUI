@@ -146,6 +146,24 @@ lifecycle runs passed as GL presentation evidence only, never Web FPS claims.
 Manual world/rounded-corner/scanout inspection remains **READY FOR USER
 ACCEPTANCE**. See `plans/d3d-opengl-interop-plan.md`.
 
+## NeoForge Direct CEF opt-in slice (2026-08-13)
+
+The repository now contains an experimental Windows-only NeoForge 1.21.1
+Direct CEF slice (`plans/direct-cef-neoforge-plan.md`). It is explicitly
+selected with `mcwebui.browserBackend=direct-cef`; the default MCEF backend is
+unchanged. The bounded runner excludes MCEF/JCEF from the direct process to
+avoid loading two process-global CEF versions, passes the pinned CEF144 helper
+through `browser_subprocess_path`, and records a clean native lifecycle smoke.
+
+The direct client reached NeoForge GL/resource startup with Mod List
+MCWebUI/Minecraft/NeoForge and logged the selected backend. The final bounded
+run sent F8 only while the title was still `Minecraft: NeoForge Loading...`, so
+no Direct CEF native diagnostics or Minecraft mailbox frame were observed.
+This is **VERDICT B**, not a Minecraft integration PASS: F8/native/WGL
+interop, world composition, and visual scanout remain **READY FOR USER
+ACCEPTANCE**. The standalone NVIDIA interop result above remains valid only for
+its private proof executable.
+
 ## Future implementation boundary
 
 If a later official CEF/driver combination passes all proof gates, keep the
