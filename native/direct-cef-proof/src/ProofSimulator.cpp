@@ -91,6 +91,43 @@ void ProofSimulator::SetAlphaSamplePoints(const std::map<std::string, POINT>& po
   alpha_sample_points_ = points;
 }
 
+bool ProofSimulator::AcquireLatestForInterop(MailboxInteropFrame& frame) {
+  if (!mailbox_ || !ready_) return false;
+  std::lock_guard<std::mutex> lock(gpu_mutex_);
+  if (latest_slot_ < 0 || latest_slot_ >= static_cast<int>(slots_.size())) return false;
+  if (consumer_slot_ >= 0) return false;
+  consumer_slot_ = latest_slot_;
+  frame.slot = consumer_slot_;
+  frame.generation = slots_[consumer_slot_].generation;
+  frame.texture = slots_[consumer_slot_].texture;
+  return frame.texture != nullptr;
+}
+
+void ProofSimulator::ReleaseForInterop(int slot) {
+  std::lock_guard<std::mutex> lock(gpu_mutex_);
+  if (consumer_slot_ == slot) consumer_slot_ = -1;
+}
+
+std::map<std::string, POINT> ProofSimulator::AlphaSamplePoints() const {
+  std::lock_guard<std::mutex> lock(gpu_mutex_);
+  return alpha_sample_points_;
+}
+
+std::vector<MailboxInteropFrame> ProofSimulator::SnapshotMailboxForInterop() {
+  std::vector<MailboxInteropFrame> result;
+  if (!mailbox_ || !ready_) return result;
+  std::lock_guard<std::mutex> lock(gpu_mutex_);
+  for (std::size_t index = 0; index < slots_.size(); ++index) {
+    if (!slots_[index].texture || static_cast<int>(index) == consumer_slot_) continue;
+    MailboxInteropFrame frame;
+    frame.slot = static_cast<int>(index);
+    frame.generation = slots_[index].generation;
+    frame.texture = slots_[index].texture;
+    result.push_back(std::move(frame));
+  }
+  return result;
+}
+
 void ProofSimulator::DispatchInput(const InputEvent& event) {
   InputSink sink;
   {

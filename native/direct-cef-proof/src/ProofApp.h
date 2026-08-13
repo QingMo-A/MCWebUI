@@ -14,6 +14,7 @@
 #include "ProofClient.h"
 #include "ProofMetrics.h"
 #include "ProofSimulator.h"
+#include "ProofOpenGLInterop.h"
 
 class ProofApp final : public CefApp, public CefBrowserProcessHandler {
  public:
@@ -21,7 +22,8 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
            int target_hz, int duration_ms, bool accelerated,
            bool animate, bool simulator, bool mailbox,
            std::string present_mode, std::string output_path,
-           int windowless_frame_rate_override, bool alpha_proof, bool interactive, bool auto_input);
+           int windowless_frame_rate_override, bool alpha_proof, bool interactive, bool auto_input,
+           bool opengl_interop);
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   void OnBeforeChildProcessLaunch(CefRefPtr<CefCommandLine> command_line) override;
   void OnContextInitialized() override;
@@ -40,6 +42,7 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
   const bool alpha_proof_;
   const bool interactive_;
   const bool auto_input_;
+  const bool opengl_interop_;
   std::atomic<bool> layout_ready_{false};
   std::atomic<bool> input_focus_{false};
   std::atomic<bool> input_active_{false};
@@ -64,5 +67,6 @@ class ProofApp final : public CefApp, public CefBrowserProcessHandler {
   mutable std::mutex window_mutex_;
   HWND host_window_ = nullptr;
   std::unique_ptr<ProofSimulator> simulator_renderer_;
+  std::unique_ptr<ProofOpenGLInterop> opengl_renderer_;
   IMPLEMENT_REFCOUNTING(ProofApp);
 };

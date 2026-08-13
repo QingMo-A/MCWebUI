@@ -63,6 +63,7 @@ int main(int argc, char* argv[]) {
   const bool simulator_coupled = command_line->HasSwitch("simulator-coupled") ||
       (command_line->HasSwitch("simulator") && !simulator_mailbox);
   const bool simulator = simulator_coupled || simulator_mailbox;
+  const bool opengl_interop = command_line->HasSwitch("opengl-interop");
   const std::string present_mode = ReadSwitch(command_line, "present-mode", "vsync");
   const bool animate = !command_line->HasSwitch("idle");
   const std::string output = ReadSwitch(command_line, "output", "direct-cef-proof-result.json");
@@ -87,7 +88,8 @@ int main(int argc, char* argv[]) {
   CefRefPtr<ProofApp> app = new ProofApp(url, mode, width, height, target_hz,
                                         duration_ms, accelerated, animate, simulator,
                                         simulator_mailbox, present_mode, output,
-                                        windowless_frame_rate_override, alpha_proof, interactive, auto_input);
+                                        windowless_frame_rate_override, alpha_proof, interactive, auto_input,
+                                        opengl_interop);
   if (!CefInitialize(main_args, settings, app, nullptr)) {
     std::cerr << "[direct-cef-proof] CefInitialize failed" << std::endl;
     return 2;

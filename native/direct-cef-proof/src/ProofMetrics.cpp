@@ -197,6 +197,100 @@ void ProofMetrics::FinishRealCefAlphaAcceptance(bool passed) {
   real_cef_alpha_passed_ = real_cef_alpha_passed_ && passed;
 }
 
+void ProofMetrics::BeginOpenGLInterop(bool extension_nv, bool extension_nv2,
+                                      bool entry_points_complete,
+                                      const std::string& vendor,
+                                      const std::string& renderer,
+                                      const std::string& version,
+                                      const std::string& extensions,
+                                      const std::string& adapter,
+                                      std::uint32_t luid_high,
+                                      std::uint32_t luid_low) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  gl_attempted_ = true;
+  gl_extension_nv_ = extension_nv;
+  gl_extension_nv2_ = extension_nv2;
+  gl_entry_points_complete_ = entry_points_complete;
+  gl_supported_ = extension_nv2 && entry_points_complete;
+  gl_status_ = gl_supported_ ? "READY" : "UNSUPPORTED";
+  gl_vendor_ = vendor;
+  gl_renderer_ = renderer;
+  gl_version_ = version;
+  gl_extensions_ = extensions;
+  gl_dxgi_adapter_ = adapter;
+  gl_dxgi_luid_high_ = luid_high;
+  gl_dxgi_luid_low_ = luid_low;
+}
+
+void ProofMetrics::RecordOpenGLDevice(bool opened, unsigned last_error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  gl_device_opened_ = opened;
+  gl_open_last_error_ = last_error;
+  if (!opened && gl_supported_) gl_status_ = "FAILED";
+}
+
+void ProofMetrics::RecordOpenGLRegistration(bool registered, unsigned, unsigned last_error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++gl_register_attempts_;
+  if (registered) ++gl_register_successes_;
+  else {
+    ++gl_register_failures_;
+    gl_open_last_error_ = last_error;
+    if (gl_supported_) gl_status_ = "FAILED";
+  }
+}
+
+void ProofMetrics::RecordOpenGLLock(bool locked, unsigned last_error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++gl_lock_attempts_;
+  if (locked) ++gl_lock_successes_;
+  else {
+    ++gl_lock_failures_;
+    gl_open_last_error_ = last_error;
+  }
+}
+
+void ProofMetrics::RecordOpenGLUnlock(bool unlocked, unsigned last_error) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++gl_unlock_attempts_;
+  if (unlocked) ++gl_unlock_successes_;
+  else {
+    ++gl_unlock_failures_;
+    gl_open_last_error_ = last_error;
+  }
+}
+
+void ProofMetrics::RecordOpenGLFrame(bool new_generation) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++gl_frames_;
+  if (new_generation) ++gl_new_frames_;
+  else ++gl_repeat_frames_;
+}
+
+void ProofMetrics::RecordOpenGLDrop() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ++gl_drops_;
+}
+
+void ProofMetrics::RecordOpenGLSample(const std::string& name, bool composition,
+                                      unsigned actual_r, unsigned actual_g,
+                                      unsigned actual_b, unsigned actual_a,
+                                      unsigned expected_r, unsigned expected_g,
+                                      unsigned expected_b, unsigned expected_a,
+                                      bool passed) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  gl_samples_[name] = {composition, passed, actual_r, actual_g, actual_b, actual_a,
+                       expected_r, expected_g, expected_b, expected_a};
+}
+
+void ProofMetrics::FinishOpenGLProof(bool performed, bool passed, bool flipped_y) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  gl_proof_performed_ = performed;
+  gl_proof_passed_ = passed;
+  gl_texture_y_flipped_ = flipped_y;
+  if (performed && gl_supported_) gl_status_ = passed ? "PASS" : "FAILED";
+}
+
 TimingSummary ProofMetrics::Summarize(
     const std::vector<Clock::time_point>& samples) {
   TimingSummary result;
@@ -450,6 +544,49 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
       << (real_cef_alpha_verdict ? "true" : "false")
       << ",\"rawTexture\":" << json_real_samples(real_cef_raw_samples_)
       << ",\"composition\":" << json_real_samples(real_cef_composition_samples_)
-      << "},\n  \"alphaModel\":\"" << JsonString(alpha_model_) << "\"\n}\n";
+      << "},\n  \"alphaModel\":\"" << JsonString(alpha_model_) << "\",\n"
+      << "  \"openGlInterop\":{\"attempted\":" << (gl_attempted_ ? "true" : "false")
+      << ",\"status\":\"" << JsonString(gl_status_) << "\""
+      << ",\"supported\":" << (gl_supported_ ? "true" : "false")
+      << ",\"extensions\":{\"nv\":" << (gl_extension_nv_ ? "true" : "false")
+      << ",\"nvInterop2\":" << (gl_extension_nv2_ ? "true" : "false")
+      << ",\"entryPointsComplete\":" << (gl_entry_points_complete_ ? "true" : "false") << "}"
+      << ",\"identity\":{\"vendor\":\"" << JsonString(gl_vendor_)
+      << "\",\"renderer\":\"" << JsonString(gl_renderer_)
+      << "\",\"version\":\"" << JsonString(gl_version_)
+      << "\",\"extensions\":\"" << JsonString(gl_extensions_)
+      << "\",\"dxgiAdapter\":\"" << JsonString(gl_dxgi_adapter_)
+      << "\",\"luidHigh\":" << gl_dxgi_luid_high_ << ",\"luidLow\":" << gl_dxgi_luid_low_ << "}"
+      << ",\"device\":{\"opened\":" << (gl_device_opened_ ? "true" : "false")
+      << ",\"lastError\":" << gl_open_last_error_ << "}"
+      << ",\"registration\":{\"attempts\":" << gl_register_attempts_
+      << ",\"successes\":" << gl_register_successes_
+      << ",\"failures\":" << gl_register_failures_
+      << ",\"registeredSlotCount\":" << gl_register_successes_
+      << ",\"expectedSlotCount\":3}"
+      << ",\"lock\":{\"attempts\":" << gl_lock_attempts_ << ",\"successes\":" << gl_lock_successes_
+      << ",\"failures\":" << gl_lock_failures_ << "}"
+      << ",\"unlock\":{\"attempts\":" << gl_unlock_attempts_ << ",\"successes\":" << gl_unlock_successes_
+      << ",\"failures\":" << gl_unlock_failures_ << "}"
+      << ",\"frames\":{\"total\":" << gl_frames_ << ",\"new\":" << gl_new_frames_
+      << ",\"repeat\":" << gl_repeat_frames_ << ",\"drops\":" << gl_drops_ << "}"
+      << ",\"proof\":{\"performed\":" << (gl_proof_performed_ ? "true" : "false")
+      << ",\"passed\":" << (gl_proof_passed_ ? "true" : "false")
+      << ",\"textureYFlipped\":" << (gl_texture_y_flipped_ ? "true" : "false")
+      << ",\"samples\":[";
+  bool first_gl_sample = true;
+  for (const auto& entry : gl_samples_) {
+    if (!first_gl_sample) out << ',';
+    first_gl_sample = false;
+    const auto& sample = entry.second;
+    out << "{\"name\":\"" << JsonString(entry.first) << "\",\"composition\":"
+        << (sample.composition ? "true" : "false") << ",\"passed\":"
+        << (sample.passed ? "true" : "false") << ",\"actual\":{\"r\":"
+        << sample.actual_r << ",\"g\":" << sample.actual_g << ",\"b\":" << sample.actual_b
+        << ",\"a\":" << sample.actual_a << "},\"expected\":{\"r\":" << sample.expected_r
+        << ",\"g\":" << sample.expected_g << ",\"b\":" << sample.expected_b
+        << ",\"a\":" << sample.expected_a << "}}";
+  }
+  out << "]}\n  }\n}\n";
   return true;
 }

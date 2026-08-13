@@ -44,6 +44,12 @@ struct InputEvent {
   bool focused = false;
 };
 
+struct MailboxInteropFrame {
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+  std::uint64_t generation = 0;
+  int slot = -1;
+};
+
 // GPU-only presentation proof. Coupled mode is retained for the historical
 // baseline. Mailbox mode copies CEF frames into host-owned slots and presents
 // them from an independent consumer loop; no CPU readback is used.
@@ -67,6 +73,11 @@ class ProofSimulator final {
   std::uint64_t PresentedFrames() const;
   bool MailboxMode() const { return mailbox_; }
   bool Ready() const { return ready_; }
+  ID3D11Device* NativeDevice() const { return device_.Get(); }
+  bool AcquireLatestForInterop(MailboxInteropFrame& frame);
+  void ReleaseForInterop(int slot);
+  std::map<std::string, POINT> AlphaSamplePoints() const;
+  std::vector<MailboxInteropFrame> SnapshotMailboxForInterop();
   using InputSink = std::function<void(const InputEvent&)>;
   void SetInputSink(InputSink sink);
   void SetAlphaSamplePoints(const std::map<std::string, POINT>& points);

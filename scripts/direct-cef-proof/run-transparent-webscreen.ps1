@@ -10,6 +10,8 @@ param(
     [int]$WindowlessFrameRate = 0,
     [ValidateSet('vsync', 'uncoupled')]
     [string]$PresentMode = 'vsync',
+    [switch]$OpenGLInterop,
+    [switch]$Headless,
     [switch]$AutoInput,
     [switch]$AlphaProof
 )
@@ -24,12 +26,14 @@ $dist = (Resolve-Path (Join-Path $repo 'frontend\playground\dist')).Path
 $python = (Get-Command python.exe -ErrorAction Stop).Source
 $serverArguments = "-m http.server $Port --bind 127.0.0.1 --directory `"$dist`""
 $server = Start-Process -FilePath $python -ArgumentList $serverArguments -WindowStyle Hidden -PassThru
-$args = @('--mode=external-begin-frame', "--target-hz=$TargetHz", '--accelerated', '--simulator-mailbox', "--present-mode=$PresentMode", '--interactive', "--width=$Width", "--height=$Height", "--dist=$(Join-Path $dist 'index.html')", "--url=http://127.0.0.1:$Port/?view=transparent-lab")
+$args = @('--mode=external-begin-frame', "--target-hz=$TargetHz", '--accelerated', '--simulator-mailbox', "--present-mode=$PresentMode", "--width=$Width", "--height=$Height", "--dist=$(Join-Path $dist 'index.html')", "--url=http://127.0.0.1:$Port/?view=transparent-lab")
+if (-not $Headless) { $args += '--interactive' }
 # Always pass the duration explicitly.  Zero is intentional: it leaves the
 # interactive proof open until the second Escape closes the browser.  Bounded
 # automation callers should provide a positive DurationMs.
 $args += "--duration-ms=$DurationMs"
 if ($WindowlessFrameRate -gt 0) { $args += "--windowless-frame-rate=$WindowlessFrameRate" }
+if ($OpenGLInterop) { $args += '--opengl-interop' }
 if ($AutoInput) { $args += '--auto-input' }
 if ($AlphaProof) { $args += '--alpha-proof' }
 try {

@@ -88,7 +88,8 @@ ProofApp::ProofApp(std::string url, std::string mode, int width, int height,
                    int target_hz, int duration_ms, bool accelerated,
                    bool animate, bool simulator, bool mailbox,
                    std::string present_mode, std::string output_path,
-                   int windowless_frame_rate_override, bool alpha_proof, bool interactive, bool auto_input)
+                   int windowless_frame_rate_override, bool alpha_proof, bool interactive, bool auto_input,
+                   bool opengl_interop)
     : url_(std::move(url)), mode_(std::move(mode)), width_(width), height_(height),
       target_hz_(target_hz), duration_ms_(duration_ms), accelerated_(accelerated),
       animate_(animate), simulator_(simulator), mailbox_(mailbox),
@@ -96,6 +97,7 @@ ProofApp::ProofApp(std::string url, std::string mode, int width, int height,
       alpha_proof_(alpha_proof),
       interactive_(interactive),
       auto_input_(auto_input),
+      opengl_interop_(opengl_interop),
       present_mode_(std::move(present_mode)),
       output_path_(std::move(output_path)),
       metrics_(mode_, target_hz_, width_, height_, accelerated_, animate_,
@@ -152,13 +154,21 @@ void ProofApp::OnContextInitialized() {
     browser_settings.background_color = CefColorSetARGB(0, 0, 0, 0);
   }
   if (simulator_ && !windowed) {
-    simulator_renderer_ = std::make_unique<ProofSimulator>(
+      simulator_renderer_ = std::make_unique<ProofSimulator>(
         host_window_, width_, height_, &metrics_, mailbox_, target_hz_,
         present_mode_ == "uncoupled", alpha_proof_);
     if (!simulator_renderer_->Initialize()) {
       std::cerr << "[direct-cef-proof] D3D simulator initialization failed" << std::endl;
       SignalClosed();
       return;
+    }
+    if (opengl_interop_) {
+      opengl_renderer_ = std::make_unique<ProofOpenGLInterop>(
+          host_window_, width_, height_, target_hz_, simulator_renderer_.get(),
+          &metrics_, interactive_, alpha_proof_);
+      if (!opengl_renderer_->Initialize()) {
+        std::cerr << "[direct-cef-proof] OpenGL interop initialization failed" << std::endl;
+      }
     }
   }
   client_ = new ProofClient(width_, height_, &metrics_, animate_, simulator_renderer_.get(),
@@ -225,7 +235,7 @@ void ProofApp::OnContextInitialized() {
     SignalClosed();
     return;
   }
-  if (simulator_renderer_ && simulator_renderer_->MailboxMode())
+  if (simulator_renderer_ && simulator_renderer_->MailboxMode() && !opengl_interop_)
     simulator_renderer_->StartConsumer();
   if (mode_ == "external-begin-frame") {
     scheduler_thread_ = std::thread([this] {
@@ -336,6 +346,8 @@ void ProofApp::SignalClosed() {
       input_thread_.get_id() != std::this_thread::get_id()) {
     input_thread_.join();
   }
+  // Stop the GL consumer before tearing down the D3D mailbox it borrows.
+  if (opengl_renderer_) opengl_renderer_->Stop();
   if (simulator_renderer_) simulator_renderer_->Stop();
   // OnBeforeClose executes on CEF's UI thread, so the hidden HWND is destroyed
   // on the same thread that created it.

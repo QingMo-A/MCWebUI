@@ -65,6 +65,23 @@ class ProofMetrics final {
                                       unsigned expected_r, unsigned expected_a,
                                       bool passed);
   void FinishRealCefAlphaAcceptance(bool passed);
+  void BeginOpenGLInterop(bool extension_nv, bool extension_nv2,
+                          bool entry_points_complete, const std::string& vendor,
+                          const std::string& renderer, const std::string& version,
+                          const std::string& extensions,
+                          const std::string& adapter, std::uint32_t luid_high,
+                          std::uint32_t luid_low);
+  void RecordOpenGLDevice(bool opened, unsigned last_error);
+  void RecordOpenGLRegistration(bool registered, unsigned slot, unsigned last_error);
+  void RecordOpenGLLock(bool locked, unsigned last_error);
+  void RecordOpenGLUnlock(bool unlocked, unsigned last_error);
+  void RecordOpenGLFrame(bool new_generation);
+  void RecordOpenGLDrop();
+  void RecordOpenGLSample(const std::string& name, bool composition,
+                          unsigned actual_r, unsigned actual_g, unsigned actual_b,
+                          unsigned actual_a, unsigned expected_r, unsigned expected_g,
+                          unsigned expected_b, unsigned expected_a, bool passed);
+  void FinishOpenGLProof(bool performed, bool passed, bool flipped_y);
   std::string FormatLine() const;
   bool WriteJson(const std::string& path) const;
 
@@ -142,6 +159,50 @@ class ProofMetrics final {
   };
   std::map<std::string, RealAlphaSample> real_cef_raw_samples_;
   std::map<std::string, RealAlphaSample> real_cef_composition_samples_;
+  bool gl_attempted_ = false;
+  bool gl_extension_nv_ = false;
+  bool gl_extension_nv2_ = false;
+  bool gl_entry_points_complete_ = false;
+  bool gl_supported_ = false;
+  bool gl_device_opened_ = false;
+  bool gl_proof_performed_ = false;
+  bool gl_proof_passed_ = false;
+  bool gl_texture_y_flipped_ = false;
+  std::string gl_status_;
+  std::string gl_vendor_;
+  std::string gl_renderer_;
+  std::string gl_version_;
+  std::string gl_extensions_;
+  std::string gl_dxgi_adapter_;
+  std::uint32_t gl_dxgi_luid_high_ = 0;
+  std::uint32_t gl_dxgi_luid_low_ = 0;
+  unsigned gl_open_last_error_ = 0;
+  std::uint64_t gl_register_attempts_ = 0;
+  std::uint64_t gl_register_successes_ = 0;
+  std::uint64_t gl_register_failures_ = 0;
+  std::uint64_t gl_lock_attempts_ = 0;
+  std::uint64_t gl_lock_successes_ = 0;
+  std::uint64_t gl_lock_failures_ = 0;
+  std::uint64_t gl_unlock_attempts_ = 0;
+  std::uint64_t gl_unlock_successes_ = 0;
+  std::uint64_t gl_unlock_failures_ = 0;
+  std::uint64_t gl_frames_ = 0;
+  std::uint64_t gl_new_frames_ = 0;
+  std::uint64_t gl_repeat_frames_ = 0;
+  std::uint64_t gl_drops_ = 0;
+  struct OpenGLSample {
+    bool composition = false;
+    bool passed = false;
+    unsigned actual_r = 0;
+    unsigned actual_g = 0;
+    unsigned actual_b = 0;
+    unsigned actual_a = 0;
+    unsigned expected_r = 0;
+    unsigned expected_g = 0;
+    unsigned expected_b = 0;
+    unsigned expected_a = 0;
+  };
+  std::map<std::string, OpenGLSample> gl_samples_;
   void* last_handle_ = nullptr;
   std::uint64_t child_process_launches_ = 0;
   std::uint64_t gpu_process_launches_ = 0;
