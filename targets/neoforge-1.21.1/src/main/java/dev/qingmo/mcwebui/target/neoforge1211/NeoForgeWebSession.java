@@ -14,6 +14,7 @@ import dev.qingmo.mcwebui.runtime.WebView;
 import dev.qingmo.mcwebui.runtime.WebViewConfig;
 import dev.qingmo.mcwebui.security.WebOrigin;
 import dev.qingmo.mcwebui.security.WebPermissionPolicy;
+import net.minecraft.client.Minecraft;
 
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -25,6 +26,8 @@ final class NeoForgeWebSession implements AutoCloseable {
     private static final String PLAYGROUND_HOST = "playground.mcwebui";
     private final WebRuntime runtime;
     private final BrowserBackend backend;
+    private final boolean directBackend;
+    private String backendName = "mcef";
     private final NeoForgeDemoBridge demo;
     private WebView view;
     private NeoForgeRenderableSurface surface;
@@ -44,7 +47,40 @@ final class NeoForgeWebSession implements AutoCloseable {
         this.runtime = new DefaultWebRuntime(new WebPermissionPolicy(EnumSet.of(
                 BridgeCapability.HANDSHAKE, BridgeCapability.RPC, BridgeCapability.EVENTS,
                 BridgeCapability.STATE, BridgeCapability.INPUT, BridgeCapability.CLIPBOARD), false), dispatcher);
-        this.backend = new NeoForgeMcefBackend();
+        this.backend = createBackend();
+        this.directBackend = backend instanceof DirectCefBackend;
+    }
+
+    private BrowserBackend createBackend() {
+        String selected = normalizeBackendSelection(System.getProperty("mcwebui.browserBackend", "mcef"));
+        backendName = selected.isEmpty() ? "mcef" : selected;
+        if (selected.isEmpty() || selected.equals("mcef")) return new NeoForgeMcefBackend();
+        if (!selected.equals("direct-cef")) throw new IllegalStateException("Unknown MCWebUI browser backend: " + selected);
+        String url = System.getProperty("mcwebui.directCef.url", "").trim();
+        String runtime = System.getProperty("mcwebui.directCef.runtimeDir", "").trim();
+        String cache = System.getProperty("mcwebui.directCef.cacheDir", runtime).trim();
+        String helper = System.getProperty("mcwebui.directCef.helper", "").trim();
+        validateDirectBackendConfiguration(System.getProperty("os.name", ""), url, runtime, helper);
+        long parent = minecraftWindowHandle();
+        return new DirectCefBackend(parent, java.nio.file.Path.of(runtime), java.nio.file.Path.of(cache), helper, url,
+                Integer.getInteger("mcwebui.directCef.targetHz", 60));
+    }
+
+    static String normalizeBackendSelection(String value) {
+        return value == null ? "mcef" : value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    static void validateDirectBackendConfiguration(String osName, String url, String runtime, String helper) {
+        if (osName == null || !osName.toLowerCase(java.util.Locale.ROOT).contains("win"))
+            throw new IllegalStateException("Direct CEF backend requires Windows");
+        if (url == null || url.trim().isEmpty())
+            throw new IllegalStateException("mcwebui.directCef.url is required for direct-cef");
+        if (runtime == null || runtime.trim().isEmpty() || helper == null || helper.trim().isEmpty())
+            throw new IllegalStateException("Direct CEF runtimeDir/helper are required");
+    }
+
+    private static long minecraftWindowHandle() {
+        return Minecraft.getInstance().getWindow().getWindow();
     }
 
     void init(int guiWidth, int guiHeight, double guiScale) {
@@ -113,6 +149,7 @@ final class NeoForgeWebSession implements AutoCloseable {
     }
 
     NeoForgeRenderableSurface surface() { return surface; }
+    boolean isDirectBackend() { return directBackend; }
     void beginFrame(long frameTimeNanos) {
         if (shouldBeginFrame(closed, visible, view == null ? null : view.state().lifecycle(), surface != null)) {
             surface.metrics().recordGameSignal();
@@ -131,8 +168,9 @@ final class NeoForgeWebSession implements AutoCloseable {
         info.put("loader", "NeoForge");
         info.put("minecraftVersion", "1.21.1");
         info.put("javaVersion", 21);
-        info.put("browserBackend", "CinemaMod MCEF");
-        info.put("browserVersion", "2.1.6-1.21.1");
+        info.put("browserBackend", directBackend ? "Direct CEF (experimental)" : "CinemaMod MCEF");
+        info.put("browserBackendSelection", backendName);
+        info.put("browserVersion", directBackend ? "144 (proof runtime)" : "2.1.6-1.21.1");
         info.put("minecraftGuiWidth", minecraftGuiWidth);
         info.put("minecraftGuiHeight", minecraftGuiHeight);
         info.put("browserViewportWidth", surface == null ? 0 : surface.width());

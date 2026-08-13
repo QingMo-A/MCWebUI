@@ -23,6 +23,8 @@ public final class NeoForgeMinecraftScreen extends Screen {
         this.session = new NeoForgeWebSession(dispatcher, demo);
     }
 
+    @Override public boolean isPauseScreen() { return false; }
+
     @Override protected void init() {
         session.init(width, height, minecraft.getWindow().getGuiScale());
     }
@@ -33,31 +35,51 @@ public final class NeoForgeMinecraftScreen extends Screen {
     }
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        super.render(graphics, mouseX, mouseY, partialTick);
+        if (session.isDirectBackend()) {
+            // Screen.render() invokes renderBackground(), which paints an opaque menu over
+            // the world. Direct CEF is a transparent overlay, so render only children here.
+            for (var renderable : renderables) renderable.render(graphics, mouseX, mouseY, partialTick);
+        } else {
+            // Keep stock MCEF's established Screen/background behavior byte-for-byte.
+            super.render(graphics, mouseX, mouseY, partialTick);
+        }
         NeoForgeRenderableSurface surface = session.surface();
         if (surface == null) return;
         // One active, visible host render gives an opt-in backend at most one
         // non-blocking begin-frame opportunity. Stock MCEF remains callback-driven.
         session.beginFrame(System.nanoTime());
+        DirectCefRenderableSurface direct = surface instanceof DirectCefRenderableSurface d ? d : null;
+        boolean directLocked = direct == null || direct.beginRenderFrame();
+        if (!directLocked) return;
         int textureId = surface.textureId();
         // MCEF exposes texture id 0 until its render-thread initialization has completed;
         // binding it would draw the default texture and make the screen look permanently blank.
-        if (textureId <= 0) return;
+        if (textureId <= 0) { if (direct != null) direct.endRenderFrame(); return; }
+        int previousTexture = RenderSystem.getShaderTexture(0);
         RenderSystem.disableDepthTest();
         // MCEF's surface is created opaque; leave the same post-draw state as the previous
         // transparent path while avoiding a blend pass for the full-screen browser quad.
-        RenderSystem.disableBlend();
+        if (direct != null) RenderSystem.enableBlend(); else RenderSystem.disableBlend();
+        if (direct != null) RenderSystem.blendFuncSeparate(770, 771, 1, 771);
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, textureId);
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder buffer = tesselator.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
         var pose = graphics.pose().last().pose();
-        buffer.addVertex(pose, 0, 0, 0).setUv(0, 0);
-        buffer.addVertex(pose, 0, height, 0).setUv(0, 1);
-        buffer.addVertex(pose, width, height, 0).setUv(1, 1);
-        buffer.addVertex(pose, width, 0, 0).setUv(1, 0);
-        BufferUploader.drawWithShader(buffer.buildOrThrow());
-        RenderSystem.enableDepthTest();
+        boolean flip = direct != null && direct.yFlipped();
+        buffer.addVertex(pose, 0, 0, 0).setUv(0, flip ? 1 : 0);
+        buffer.addVertex(pose, 0, height, 0).setUv(0, flip ? 0 : 1);
+        buffer.addVertex(pose, width, height, 0).setUv(1, flip ? 0 : 1);
+        buffer.addVertex(pose, width, 0, 0).setUv(1, flip ? 1 : 0);
+        try {
+            BufferUploader.drawWithShader(buffer.buildOrThrow());
+        }
+        finally {
+            if (direct != null) { direct.endRenderFrame(); RenderSystem.disableBlend(); }
+            if (direct != null) RenderSystem.defaultBlendFunc();
+            RenderSystem.setShaderTexture(0, previousTexture);
+            RenderSystem.enableDepthTest();
+        }
     }
 
     @Override public boolean mouseClicked(double x, double y, int button) { session.mouseButton(x, y, button, true); return true; }

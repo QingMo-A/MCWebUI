@@ -6,6 +6,7 @@ import dev.qingmo.mcwebui.runtime.WebViewLifecycle;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** Locks the GUI-coordinate contract used by the browser surface and Screen input routing. */
 class NeoForgeWebSessionViewportTest {
@@ -37,5 +38,35 @@ class NeoForgeWebSessionViewportTest {
         assertEquals(640.0, NeoForgeWebSession.mapCoordinate(960.0, 1920, 1280));
         // Use independent extents so a width-based mapping cannot accidentally pass for y.
         assertEquals(300.0, NeoForgeWebSession.mapCoordinate(450.0, 900, 600));
+    }
+
+    @Test
+    void backendSelectionDefaultsToMcefAndIsCaseInsensitive() {
+        assertEquals("mcef", NeoForgeWebSession.normalizeBackendSelection(null));
+        assertEquals("mcef", NeoForgeWebSession.normalizeBackendSelection("  MCEF "));
+        assertEquals("direct-cef", NeoForgeWebSession.normalizeBackendSelection(" Direct-CEF "));
+    }
+
+    @Test
+    void directBackendFailsExplicitlyWhenConfigurationIsIncomplete() {
+        assertThrows(IllegalStateException.class, () ->
+                NeoForgeWebSession.validateDirectBackendConfiguration("Windows 11", "", "runtime", "helper"));
+        assertThrows(IllegalStateException.class, () ->
+                NeoForgeWebSession.validateDirectBackendConfiguration("Linux", "http://127.0.0.1:1/", "runtime", "helper"));
+        assertThrows(IllegalStateException.class, () ->
+                NeoForgeWebSession.validateDirectBackendConfiguration("Windows 11", "http://127.0.0.1:1/", "", "helper"));
+    }
+
+    @Test
+    void directBackendConfigurationAcceptsCompleteWindowsProofSelection() {
+        NeoForgeWebSession.validateDirectBackendConfiguration(
+                "Windows 11", "http://127.0.0.1:8765/", "cef-runtime", "cef-runtime/mcwebui-cef-helper.exe");
+    }
+
+    @Test
+    void directBackendSelectionIsIndependentOfMcefReadiness() {
+        assertTrue(NeoForgeBackendSelection.directCefSelected(" direct-cef "));
+        assertFalse(NeoForgeBackendSelection.directCefSelected("mcef"));
+        assertFalse(NeoForgeBackendSelection.directCefSelected(null));
     }
 }

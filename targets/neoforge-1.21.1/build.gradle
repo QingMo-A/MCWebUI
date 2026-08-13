@@ -9,6 +9,8 @@ java {
 }
 
 def framePacingProof = providers.gradleProperty('mcwebuiFramePacingProof').map { it.toBoolean() }.orElse(false)
+def directCef = providers.gradleProperty('mcwebuiBrowserBackend').map { it.equalsIgnoreCase('direct-cef') }.orElse(false)
+def directCefProof = providers.gradleProperty('mcwebuiDirectCefProof').map { it.toBoolean() }.orElse(false)
 
 sourceSets {
     main {
@@ -64,8 +66,33 @@ if (framePacingProof.get()) {
 } else {
     dependencies {
         compileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
-        runtimeOnly 'com.cinemamod:mcef-neoforge:2.1.6-1.21.1'
         testCompileOnly 'com.cinemamod:mcef:2.1.6-1.21.1'
+        // Direct CEF loads the pinned CEF144 DLL in-process.  Keeping the MCEF
+        // NeoForge runtime mod on that classpath would load a second libcef
+        // (the stock JCEF build) before F8 and makes the two runtimes unsafe to
+        // coexist.  The default property remains MCEF and keeps the original
+        // runtime dependency unchanged.
+        if (!directCefProof.get()) {
+            runtimeOnly 'com.cinemamod:mcef-neoforge:2.1.6-1.21.1'
+        }
+    }
+}
+
+if (directCef.get()) {
+    tasks.withType(JavaExec).configureEach {
+        def directUrl = providers.gradleProperty('mcwebuiDirectCefUrl').orElse('').get()
+        def directRuntime = providers.gradleProperty('mcwebuiDirectCefRuntimeDir').orElse('').get()
+        def directHelper = providers.gradleProperty('mcwebuiDirectCefHelper').orElse('').get()
+        def directNative = providers.gradleProperty('mcwebuiDirectCefNative').orElse('').get()
+        def directCache = providers.gradleProperty('mcwebuiDirectCefCacheDir').orElse('').get()
+        def directTargetHz = providers.gradleProperty('mcwebuiDirectCefTargetHz').orElse('60').get()
+        jvmArgs "-Dmcwebui.browserBackend=direct-cef",
+                "-Dmcwebui.directCef.url=${directUrl}",
+                "-Dmcwebui.directCef.runtimeDir=${directRuntime}",
+                "-Dmcwebui.directCef.helper=${directHelper}",
+                "-Dmcwebui.directCef.native=${directNative}",
+                "-Dmcwebui.directCef.cacheDir=${directCache}",
+                "-Dmcwebui.directCef.targetHz=${directTargetHz}"
     }
 }
 
