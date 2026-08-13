@@ -92,7 +92,7 @@ void ProofClient::OnLoadEnd(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame,
   frame->ExecuteJavaScript(R"JS((()=>{
     let attempts=0;
     const emit=()=>{const app=document.querySelector('#app');const out={url:location.href,marker:!!document.querySelector('.transparent-lab'),ready:document.readyState,appChildren:app?.childElementCount??-1,bodyClass:document.body.className};
-      for(const k of ['button','range','checkbox','select','text','scroll','modal','modal-close']){const e=document.querySelector(`[data-test="${k}"]`);if(e){const r=e.getBoundingClientRect();out[k]={x:r.left+r.width/2,y:r.top+r.height/2,width:r.width,height:r.height};}}
+      for(const k of ['button','range','checkbox','select','text','scroll','modal','modal-close','world-reveal','alpha0','alpha25','alpha50','alpha75','alpha100']){const e=document.querySelector(`[data-test="${k}"]`);if(e){const r=e.getBoundingClientRect();const sample=k==='world-reveal'||k.startsWith('alpha');out[k]={x:sample?r.left+5:r.left+r.width/2,y:sample?r.top+5:r.top+r.height/2,width:r.width,height:r.height};}}
       console.info('MCWEBUI_LAYOUT '+JSON.stringify(out));
       if(!out.marker&&++attempts<12)setTimeout(emit,100);};
     if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(emit),{once:true}); else requestAnimationFrame(emit);

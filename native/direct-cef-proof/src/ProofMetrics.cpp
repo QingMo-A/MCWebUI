@@ -160,6 +160,43 @@ void ProofMetrics::RecordAlphaAcceptance(bool passed, const std::string& color_s
                             expected_b, expected_g, expected_r, expected_a});
 }
 
+void ProofMetrics::BeginRealCefAlphaAcceptance(const std::string& model) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  alpha_model_ = model;
+  real_cef_alpha_performed_ = true;
+  real_cef_alpha_passed_ = true;
+}
+
+void ProofMetrics::RecordRealCefRawSample(const std::string& name, int x, int y,
+                                          unsigned actual_b, unsigned actual_g,
+                                          unsigned actual_r, unsigned actual_a,
+                                          unsigned expected_b, unsigned expected_g,
+                                          unsigned expected_r, unsigned expected_a,
+                                          bool passed) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  real_cef_raw_samples_[name] = {passed, x, y, actual_b, actual_g, actual_r, actual_a,
+                                 expected_b, expected_g, expected_r, expected_a};
+  real_cef_alpha_passed_ = real_cef_alpha_passed_ && passed;
+}
+
+void ProofMetrics::RecordRealCefCompositionSample(const std::string& name, int x, int y,
+                                                  unsigned actual_b, unsigned actual_g,
+                                                  unsigned actual_r, unsigned actual_a,
+                                                  unsigned expected_b, unsigned expected_g,
+                                                  unsigned expected_r, unsigned expected_a,
+                                                  bool passed) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  real_cef_composition_samples_[name] = {passed, x, y, actual_b, actual_g, actual_r, actual_a,
+                                         expected_b, expected_g, expected_r, expected_a};
+  real_cef_alpha_passed_ = real_cef_alpha_passed_ && passed;
+}
+
+void ProofMetrics::FinishRealCefAlphaAcceptance(bool passed) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  real_cef_alpha_performed_ = true;
+  real_cef_alpha_passed_ = real_cef_alpha_passed_ && passed;
+}
+
 TimingSummary ProofMetrics::Summarize(
     const std::vector<Clock::time_point>& samples) {
   TimingSummary result;
@@ -285,6 +322,39 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
   if (directory_error) return false;
   std::ofstream out(output, std::ios::binary | std::ios::trunc);
   if (!out) return false;
+  const auto json_real_samples = [](const std::map<std::string, RealAlphaSample>& samples) {
+    std::ostringstream value;
+    value << "{";
+    bool first = true;
+    for (const auto& entry : samples) {
+      if (!first) value << ',';
+      first = false;
+      const auto& sample = entry.second;
+      value << "\"" << JsonString(entry.first) << "\":{";
+      value << "\"passed\":" << (sample.passed ? "true" : "false")
+            << ",\"x\":" << sample.x << ",\"y\":" << sample.y
+            << ",\"actual\":{\"b\":" << sample.actual_b << ",\"g\":"
+            << sample.actual_g << ",\"r\":" << sample.actual_r << ",\"a\":"
+            << sample.actual_a << "},\"expected\":{\"b\":" << sample.expected_b
+            << ",\"g\":" << sample.expected_g << ",\"r\":" << sample.expected_r
+            << ",\"a\":" << sample.expected_a << "}}";
+    }
+    value << "}";
+    return value.str();
+  };
+  // Derive the aggregate from the samples that will be serialized. This keeps
+  // the verdict honest if a callback exits early after recording a sample (and
+  // prevents a stale intermediate flag from disagreeing with the JSON rows).
+  const auto all_real_samples_passed = [](const std::map<std::string, RealAlphaSample>& samples) {
+    if (samples.size() != 5) return false;
+    for (const auto& entry : samples) {
+      if (!entry.second.passed) return false;
+    }
+    return true;
+  };
+  const bool real_cef_alpha_verdict = real_cef_alpha_performed_ &&
+      all_real_samples_passed(real_cef_raw_samples_) &&
+      all_real_samples_passed(real_cef_composition_samples_);
   out << std::fixed << std::setprecision(3)
       << "{\n  \"schemaVersion\":1,\n  \"mode\":\"" << mode_ << "\",\n"
       << "  \"targetHz\":" << target_hz_ << ",\n"
@@ -375,6 +445,11 @@ bool ProofMetrics::WriteJson(const std::string& path) const {
     if (index) out << ',';
     out << "\"" << JsonString(lab_input_observations_[index]) << "\"";
   }
-  out << "]}\n}\n";
+  out << "]},\n  \"realCefAlphaAcceptance\":{\"performed\":"
+      << (real_cef_alpha_performed_ ? "true" : "false") << ",\"passed\":"
+      << (real_cef_alpha_verdict ? "true" : "false")
+      << ",\"rawTexture\":" << json_real_samples(real_cef_raw_samples_)
+      << ",\"composition\":" << json_real_samples(real_cef_composition_samples_)
+      << "},\n  \"alphaModel\":\"" << JsonString(alpha_model_) << "\"\n}\n";
   return true;
 }

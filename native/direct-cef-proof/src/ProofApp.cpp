@@ -57,7 +57,7 @@ std::string ChildProcessSwitchSummary(CefRefPtr<CefCommandLine> command_line) {
 std::map<std::string, POINT> ParseLayoutPoints(const std::string& payload) {
   std::map<std::string, POINT> points;
   static const std::regex point_pattern(
-      R"REGEX("([a-z]+)"\s*:\s*\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+))REGEX",
+      R"REGEX("([a-z0-9-]+)"\s*:\s*\{\s*"x"\s*:\s*([-+0-9.eE]+)\s*,\s*"y"\s*:\s*([-+0-9.eE]+))REGEX",
       std::regex::optimize);
   for (std::sregex_iterator it(payload.begin(), payload.end(), point_pattern), end;
        it != end; ++it) {
@@ -65,7 +65,9 @@ std::map<std::string, POINT> ParseLayoutPoints(const std::string& payload) {
     const std::string name = match[1].str();
       if (name != "button" && name != "range" && name != "checkbox" &&
         name != "select" && name != "text" && name != "scroll" &&
-        name != "modal" && name != "modal-close") {
+        name != "modal" && name != "modal-close" && name != "world-reveal" &&
+        name != "alpha0" && name != "alpha25" && name != "alpha50" &&
+        name != "alpha75" && name != "alpha100") {
       continue;
     }
     const std::string x_text = match[2].str();
@@ -143,6 +145,12 @@ void ProofApp::OnContextInitialized() {
                                    windowless_frame_rate_override_);
   metrics_.RecordWindowlessFrameRate(configured_windowless_frame_rate);
   browser_settings.windowless_frame_rate = configured_windowless_frame_rate;
+  // Transparent painting is opt-in in CEF. Keep the ordinary proof modes on
+  // their historical opaque background, but let the alpha lab receive the
+  // browser's real BGRA alpha channel instead of an opaque compositor clear.
+  if (alpha_proof_ && !windowed) {
+    browser_settings.background_color = CefColorSetARGB(0, 0, 0, 0);
+  }
   if (simulator_ && !windowed) {
     simulator_renderer_ = std::make_unique<ProofSimulator>(
         host_window_, width_, height_, &metrics_, mailbox_, target_hz_,
@@ -165,6 +173,10 @@ void ProofApp::OnContextInitialized() {
                               {
                                 std::lock_guard<std::mutex> lock(layout_mutex_);
                                 layout_points_ = std::move(points);
+                              }
+                              if (simulator_renderer_) {
+                                std::lock_guard<std::mutex> lock(layout_mutex_);
+                                simulator_renderer_->SetAlphaSamplePoints(layout_points_);
                               }
                               layout_ready_.store(true);
                             });

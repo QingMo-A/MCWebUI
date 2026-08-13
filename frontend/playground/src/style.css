@@ -21,6 +21,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 80% -15%, #1a2850 0, transparent 42%), var(--bg); }
 body.transparent-mode { background: transparent; }
+html.transparent-mode { background: transparent; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
@@ -84,15 +85,16 @@ code { color: #b9c8ff; font-size: .9em; }
 
 /* Proof-only Transparent WebScreen Lab.  It is selected by ?transparent-lab and
    remains backend-neutral: all interactions are regular HTML controls. */
-.transparent-lab { min-height: 100vh; padding: 18px clamp(18px, 4vw, 64px); color: #edf6ff; background: transparent; }
-.transparent-lab::before { position: fixed; inset: 0; z-index: -1; content: ""; background: linear-gradient(120deg, rgba(18,37,66,.2), rgba(6,12,24,.7)); pointer-events: none; }
+.transparent-lab { position: relative; min-height: 100vh; padding: 18px clamp(18px, 4vw, 64px); color: #edf6ff; background: transparent; }
+/* This aperture is deliberately empty: its native background must come from
+   the compositor, never from a page decoration. */
+.world-reveal { position: fixed; top: 8px; left: 8px; z-index: 0; width: 18px; height: 18px; pointer-events: none; background: transparent; }
 .transparent-lab-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; max-width: 1120px; margin: 0 auto 10px; }
 .transparent-lab-header h1 { margin: 3px 0 4px; font-size: clamp(1.7rem, 3vw, 2.7rem); letter-spacing: -.05em; }
 .transparent-lab-header p:not(.eyebrow) { max-width: 640px; margin: 0; color: rgba(220,232,248,.72); }
 .lab-live, .lab-readout { border: 1px solid rgba(105,230,173,.45); border-radius: 99px; padding: 7px 11px; color: #79efbb; background: rgba(105,230,173,.1); font-size: .67rem; font-weight: 800; letter-spacing: .1em; }
 .alpha-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; max-width: 1120px; margin: 0 auto 10px; }
-.alpha-patch { position: relative; min-height: 58px; display: flex; flex-direction: column; justify-content: end; gap: 2px; overflow: hidden; border: 1px solid rgba(225,237,255,.24); border-radius: 10px; padding: 8px; background-clip: padding-box; box-shadow: inset 0 0 0 999px rgba(6,14,28,.18), 0 10px 28px rgba(0,0,0,.2); }
-.alpha-patch::before { position: absolute; inset: 0; z-index: -1; content: ""; background: repeating-conic-gradient(#173050 0 25%, #24466b 0 50%) 50% / 18px 18px; }
+.alpha-patch { position: relative; min-height: 58px; display: flex; flex-direction: column; justify-content: end; gap: 2px; overflow: hidden; border: 1px solid rgba(225,237,255,.24); border-radius: 10px; padding: 8px; background-clip: padding-box; }
 .alpha-sample { position: absolute; top: 12px; right: 12px; width: 22px; height: 22px; border: 2px solid rgba(255,255,255,.8); border-radius: 50%; background: rgba(255,255,255,.14); }
 .alpha-patch strong { font-size: 1.1rem; }.alpha-patch small { color: rgba(220,232,248,.68); font-size: .7rem; }
 .transparent-panel { max-width: 1120px; margin: 0 auto; border: 1px solid rgba(206,225,250,.25); border-radius: 20px; padding: clamp(18px, 3vw, 28px); background: rgba(11,22,39,.58); box-shadow: 0 25px 70px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.08); }

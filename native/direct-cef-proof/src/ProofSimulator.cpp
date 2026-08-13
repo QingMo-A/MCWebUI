@@ -86,6 +86,11 @@ void ProofSimulator::SetInputSink(InputSink sink) {
   input_sink_ = std::move(sink);
 }
 
+void ProofSimulator::SetAlphaSamplePoints(const std::map<std::string, POINT>& points) {
+  std::lock_guard<std::mutex> lock(gpu_mutex_);
+  alpha_sample_points_ = points;
+}
+
 void ProofSimulator::DispatchInput(const InputEvent& event) {
   InputSink sink;
   {
@@ -316,6 +321,132 @@ bool ProofSimulator::RunAlphaAcceptance(ID3D11Texture2D*) {
   return all_passed;
 }
 
+bool ProofSimulator::RunRealCefAlphaAcceptance(ID3D11Texture2D* source) {
+  if (!alpha_proof_ || real_alpha_checked_ || !source || !EnsurePipeline() ||
+      alpha_sample_points_.size() < 5) return true;
+  real_alpha_checked_ = true;
+  if (!metrics_) return false;
+  metrics_->BeginRealCefAlphaAcceptance("premultiplied");
+  D3D11_TEXTURE2D_DESC source_desc{};
+  source->GetDesc(&source_desc);
+  D3D11_TEXTURE2D_DESC capture_desc = source_desc;
+  capture_desc.Width = 1;
+  capture_desc.Height = 1;
+  capture_desc.BindFlags = 0;
+  capture_desc.Usage = D3D11_USAGE_STAGING;
+  capture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  capture_desc.MiscFlags = 0;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+  if (FAILED(device_->CreateTexture2D(&capture_desc, nullptr, &staging))) return false;
+  const std::array<const char*, 5> names = {"world-reveal", "alpha25", "alpha50", "alpha75", "alpha100"};
+  const std::array<unsigned, 5> expected_alpha = {0, 64, 128, 191, 255};
+  bool all_passed = true;
+  for (std::size_t index = 0; index < names.size(); ++index) {
+    const auto point_it = alpha_sample_points_.find(names[index]);
+    if (point_it == alpha_sample_points_.end()) { all_passed = false; continue; }
+    const POINT point = point_it->second;
+    const UINT x = static_cast<UINT>(std::max<LONG>(0, std::min<LONG>(point.x, static_cast<LONG>(source_desc.Width - 1))));
+    const UINT y = static_cast<UINT>(std::max<LONG>(0, std::min<LONG>(point.y, static_cast<LONG>(source_desc.Height - 1))));
+    D3D11_BOX box{x, y, 0, x + 1, y + 1, 1};
+    context_->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, source, 0, &box);
+    context_->Flush();
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(context_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) { all_passed = false; continue; }
+    const auto* pixel = static_cast<const BYTE*>(mapped.pData);
+    const unsigned actual_b = pixel[0], actual_g = pixel[1], actual_r = pixel[2], actual_a = pixel[3];
+    // The acceptance page uses a fixed red source. Chromium's BGRA OSR output
+    // is premultiplied, so RGB should track alpha for these deterministic swatches.
+    const unsigned source_r = 214;
+    const unsigned source_g = 74;
+    const unsigned source_b = 88;
+    const unsigned expected_r = (source_r * expected_alpha[index] + 127) / 255;
+    const unsigned expected_g = (source_g * expected_alpha[index] + 127) / 255;
+    const unsigned expected_b = (source_b * expected_alpha[index] + 127) / 255;
+    const bool passed = std::abs(static_cast<int>(actual_a) - static_cast<int>(expected_alpha[index])) <= 12 &&
+        std::abs(static_cast<int>(actual_b) - static_cast<int>(expected_b)) <= 16 &&
+        std::abs(static_cast<int>(actual_g) - static_cast<int>(expected_g)) <= 16 &&
+        std::abs(static_cast<int>(actual_r) - static_cast<int>(expected_r)) <= 16;
+    metrics_->RecordRealCefRawSample(names[index], point.x, point.y, actual_b, actual_g, actual_r, actual_a,
+                                     expected_b, expected_g, expected_r, expected_alpha[index], passed);
+    all_passed = all_passed && passed;
+    context_->Unmap(staging.Get(), 0);
+  }
+  metrics_->FinishRealCefAlphaAcceptance(all_passed);
+  return all_passed;
+}
+
+bool ProofSimulator::RunRealCefCompositionAcceptance(ID3D11ShaderResourceView* source_view,
+                                                      const D3D11_TEXTURE2D_DESC& source_desc) {
+  if (!alpha_proof_ || !real_alpha_checked_ || !source_view || !EnsurePipeline()) return true;
+  constexpr UINT kSamples = 5;
+  struct UvConstants { float uv[kSamples][4]; } constants{};
+  const std::array<const char*, kSamples> names = {"world-reveal", "alpha25", "alpha50", "alpha75", "alpha100"};
+  const std::array<unsigned, kSamples> expected_alpha = {0, 64, 128, 191, 255};
+  for (UINT index = 0; index < kSamples; ++index) {
+    const POINT point = alpha_sample_points_[names[index]];
+    constants.uv[index][0] = (static_cast<float>(point.x) + .5f) / static_cast<float>(source_desc.Width);
+    constants.uv[index][1] = (static_cast<float>(point.y) + .5f) / static_cast<float>(source_desc.Height);
+  }
+  D3D11_BUFFER_DESC cb_desc{};
+  cb_desc.ByteWidth = sizeof(constants);
+  cb_desc.Usage = D3D11_USAGE_DEFAULT;
+  cb_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+  D3D11_SUBRESOURCE_DATA cb_data{&constants, 0, 0};
+  Microsoft::WRL::ComPtr<ID3D11Buffer> cb;
+  if (FAILED(device_->CreateBuffer(&cb_desc, &cb_data, &cb))) return false;
+  constexpr char kAcceptanceShader[] = R"HLSL(
+Texture2D sourceTexture : register(t0); SamplerState sourceSampler : register(s0);
+cbuffer Samples : register(b0) { float4 uv[5]; };
+float4 main(float4 position : SV_Position) : SV_Target {
+  uint index = min((uint)position.x, 4u); float4 web = sourceTexture.SampleLevel(sourceSampler, uv[index].xy, 0);
+  return float4(web.rgb + float3(0,0,1) * (1.0 - web.a), 1.0);
+})HLSL";
+  Microsoft::WRL::ComPtr<ID3DBlob> blob;
+  if (FAILED(D3DCompile(kAcceptanceShader, sizeof(kAcceptanceShader) - 1, "real_alpha_composition_ps",
+                        nullptr, nullptr, "main", "ps_5_0", 0, 0, &blob, nullptr))) return false;
+  Microsoft::WRL::ComPtr<ID3D11PixelShader> shader;
+  if (FAILED(device_->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, &shader))) return false;
+  D3D11_TEXTURE2D_DESC target_desc{};
+  target_desc.Width = kSamples; target_desc.Height = 1; target_desc.MipLevels = 1;
+  target_desc.ArraySize = 1; target_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  target_desc.SampleDesc.Count = 1; target_desc.Usage = D3D11_USAGE_DEFAULT;
+  target_desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> target;
+  Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target_view;
+  if (FAILED(device_->CreateTexture2D(&target_desc, nullptr, &target)) ||
+      FAILED(device_->CreateRenderTargetView(target.Get(), nullptr, &target_view))) return false;
+  D3D11_TEXTURE2D_DESC staging_desc = target_desc;
+  staging_desc.BindFlags = 0; staging_desc.Usage = D3D11_USAGE_STAGING; staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+  if (FAILED(device_->CreateTexture2D(&staging_desc, nullptr, &staging))) return false;
+  D3D11_VIEWPORT viewport{0, 0, static_cast<float>(kSamples), 1, 0, 1};
+  context_->RSSetViewports(1, &viewport); context_->OMSetRenderTargets(1, target_view.GetAddressOf(), nullptr);
+  context_->VSSetShader(vertex_shader_.Get(), nullptr, 0); context_->PSSetShader(shader.Get(), nullptr, 0);
+  context_->PSSetShaderResources(0, 1, &source_view); context_->PSSetSamplers(0, 1, sampler_.GetAddressOf());
+  context_->PSSetConstantBuffers(0, 1, cb.GetAddressOf()); context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  context_->Draw(3, 0); ID3D11ShaderResourceView* null_view = nullptr; context_->PSSetShaderResources(0, 1, &null_view);
+  context_->CopyResource(staging.Get(), target.Get()); context_->Flush();
+  D3D11_MAPPED_SUBRESOURCE mapped{};
+  if (FAILED(context_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+  bool all_passed = true;
+  for (UINT index = 0; index < kSamples; ++index) {
+    const auto* pixel = static_cast<const BYTE*>(mapped.pData) + index * 4;
+    const unsigned alpha = expected_alpha[index];
+    const unsigned src_b = (88 * alpha + 127) / 255, src_g = (74 * alpha + 127) / 255, src_r = (214 * alpha + 127) / 255;
+    const unsigned expected_b = src_b + (255 - alpha), expected_g = src_g, expected_r = src_r;
+    const bool passed = std::abs(static_cast<int>(pixel[0]) - static_cast<int>(expected_b)) <= 18 &&
+        std::abs(static_cast<int>(pixel[1]) - static_cast<int>(expected_g)) <= 18 &&
+        std::abs(static_cast<int>(pixel[2]) - static_cast<int>(expected_r)) <= 18 && pixel[3] >= 240;
+    const POINT point = alpha_sample_points_[names[index]];
+    metrics_->RecordRealCefCompositionSample(names[index], point.x, point.y, pixel[0], pixel[1], pixel[2], pixel[3],
+                                             expected_b, expected_g, expected_r, 255, passed);
+    all_passed = all_passed && passed;
+  }
+  context_->Unmap(staging.Get(), 0);
+  metrics_->FinishRealCefAlphaAcceptance(all_passed);
+  return all_passed;
+}
+
 bool ProofSimulator::PublishTexture(ID3D11Texture2D* source) {
   if (!mailbox_ || !EnsurePipeline() || !source) return false;
   std::unique_lock<std::mutex> lock(gpu_mutex_, std::try_to_lock);
@@ -366,6 +497,8 @@ bool ProofSimulator::PublishSharedHandle(HANDLE shared_handle,
   if (descriptor) source->GetDesc(descriptor);
   if (!EnsureMailboxTextures(source.Get())) return false;
   RunAlphaAcceptance(source.Get());
+  D3D11_TEXTURE2D_DESC source_desc{};
+  source->GetDesc(&source_desc);
   MailboxSlot* target = nullptr;
   for (std::size_t index = 0; index < slots_.size(); ++index) {
     if (static_cast<int>(index) == latest_slot_ ||
@@ -375,6 +508,8 @@ bool ProofSimulator::PublishSharedHandle(HANDLE shared_handle,
   }
   if (!target) return false;
   context_->CopyResource(target->texture.Get(), source.Get());
+  RunRealCefAlphaAcceptance(source.Get());
+  RunRealCefCompositionAcceptance(target->view.Get(), source_desc);
   target->generation = ++next_generation_;
   latest_slot_ = static_cast<int>(target - slots_.data());
   latest_generation_ = target->generation;
@@ -386,6 +521,12 @@ bool ProofSimulator::PublishSharedHandle(HANDLE shared_handle,
 
 bool ProofSimulator::DrawFrame(ID3D11ShaderResourceView* source) {
   if (!EnsurePipeline()) return false;
+  // The proof-only 1x5 composition readback temporarily changes the immediate
+  // context viewport. Restore the normal framebuffer dimensions before every
+  // regular frame so that the low-frequency readback cannot shrink later
+  // presents to the acceptance strip.
+  D3D11_VIEWPORT viewport{0, 0, static_cast<float>(width_), static_cast<float>(height_), 0, 1};
+  context_->RSSetViewports(1, &viewport);
   D3D11_MAPPED_SUBRESOURCE mapped{};
   if (SUCCEEDED(context_->Map(constants_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
     auto* values = static_cast<Constants*>(mapped.pData);

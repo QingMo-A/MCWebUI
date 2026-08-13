@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -68,6 +69,7 @@ class ProofSimulator final {
   bool Ready() const { return ready_; }
   using InputSink = std::function<void(const InputEvent&)>;
   void SetInputSink(InputSink sink);
+  void SetAlphaSamplePoints(const std::map<std::string, POINT>& points);
 
  private:
   bool EnsurePipeline();
@@ -78,6 +80,9 @@ class ProofSimulator final {
   bool DrawFrame(ID3D11ShaderResourceView* source);
   bool PresentFrame(bool has_generation, bool has_new_generation);
   bool RunAlphaAcceptance(ID3D11Texture2D* source);
+  bool RunRealCefAlphaAcceptance(ID3D11Texture2D* source);
+  bool RunRealCefCompositionAcceptance(ID3D11ShaderResourceView* source_view,
+                                       const D3D11_TEXTURE2D_DESC& source_desc);
   bool InstallInputSubclass();
   void RemoveInputSubclass();
   void DispatchInput(const InputEvent& event);
@@ -102,12 +107,14 @@ class ProofSimulator final {
   const bool alpha_proof_;
   bool ready_ = false;
   bool alpha_checked_ = false;
+  bool real_alpha_checked_ = false;
   mutable std::mutex input_mutex_;
   InputSink input_sink_;
   bool input_subclass_installed_ = false;
   std::atomic<bool> stopping_{false};
   std::thread consumer_thread_;
   mutable std::mutex gpu_mutex_;
+  std::map<std::string, POINT> alpha_sample_points_;
   std::vector<MailboxSlot> slots_;
   int latest_slot_ = -1;
   int consumer_slot_ = -1;

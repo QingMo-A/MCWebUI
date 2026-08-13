@@ -34,6 +34,10 @@ const transparentView = new URLSearchParams(window.location.search).get("view");
 const transparentLab = transparentView === "transparent-lab" ||
   new URLSearchParams(window.location.search).has("transparent-lab") ||
   window.location.hash === "#transparent-lab";
+// The root element owns the canvas background when the body is transparent.
+// Mark it before the first Vue render so CEF's OSR surface keeps real alpha
+// instead of propagating the normal showcase background through the canvas.
+if (transparentLab) document.documentElement.classList.add("transparent-mode");
 const labRange = ref(48);
 const labChecked = ref(true);
 const labChoice = ref("balanced");
@@ -252,6 +256,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   document.body.classList.remove("transparent-mode");
+  document.documentElement.classList.remove("transparent-mode");
   document.removeEventListener("pointerdown", closeSelectOnOutside);
   document.removeEventListener("keydown", closeSelectOnEscape);
   if (toastTimer) window.clearTimeout(toastTimer);
@@ -261,12 +266,13 @@ onBeforeUnmount(() => {
 
 <template>
   <main v-if="transparentLab" class="transparent-lab" @keydown="closeLabModal">
+    <div data-test="world-reveal" class="world-reveal" aria-label="World reveal aperture"></div>
     <header class="transparent-lab-header">
       <div><p class="eyebrow">MCWebUI · Direct CEF acceptance</p><h1>Transparent WebScreen Lab</h1><p>Real HTML controls over a moving GPU background. No JavaScript-generated input.</p></div>
       <span class="lab-live">INTERACTIVE</span>
     </header>
     <section class="alpha-grid" aria-label="Alpha patches">
-      <article v-for="patch in [{alpha:0,label:'0%'},{alpha:.25,label:'25%'},{alpha:.5,label:'50%'},{alpha:.75,label:'75%'},{alpha:1,label:'100%'}]" :key="patch.label" class="alpha-patch" :style="{ backgroundColor: `rgba(214, 74, 88, ${patch.alpha})` }">
+      <article v-for="patch in [{alpha:0,label:'0%',test:'alpha0'},{alpha:.25,label:'25%',test:'alpha25'},{alpha:.5,label:'50%',test:'alpha50'},{alpha:.75,label:'75%',test:'alpha75'},{alpha:1,label:'100%',test:'alpha100'}]" :key="patch.label" :data-test="patch.test" class="alpha-patch" :style="{ backgroundColor: `rgba(214, 74, 88, ${patch.alpha})` }">
         <i class="alpha-sample" aria-hidden="true"></i><strong>{{ patch.label }}</strong><small>fixed RGB</small>
       </article>
     </section>

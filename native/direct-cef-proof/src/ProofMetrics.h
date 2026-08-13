@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,20 @@ class ProofMetrics final {
                              unsigned actual_r, unsigned actual_a,
                              unsigned expected_b, unsigned expected_g,
                              unsigned expected_r, unsigned expected_a);
+  void BeginRealCefAlphaAcceptance(const std::string& model);
+  void RecordRealCefRawSample(const std::string& name, int x, int y,
+                              unsigned actual_b, unsigned actual_g,
+                              unsigned actual_r, unsigned actual_a,
+                              unsigned expected_b, unsigned expected_g,
+                              unsigned expected_r, unsigned expected_a,
+                              bool passed);
+  void RecordRealCefCompositionSample(const std::string& name, int x, int y,
+                                      unsigned actual_b, unsigned actual_g,
+                                      unsigned actual_r, unsigned actual_a,
+                                      unsigned expected_b, unsigned expected_g,
+                                      unsigned expected_r, unsigned expected_a,
+                                      bool passed);
+  void FinishRealCefAlphaAcceptance(bool passed);
   std::string FormatLine() const;
   bool WriteJson(const std::string& path) const;
 
@@ -109,6 +124,24 @@ class ProofMetrics final {
   std::string alpha_color_space_;
   unsigned alpha_tolerance_ = 0;
   std::vector<AlphaSample> alpha_samples_;
+  std::string alpha_model_;
+  bool real_cef_alpha_performed_ = false;
+  bool real_cef_alpha_passed_ = false;
+  struct RealAlphaSample {
+    bool passed = false;
+    int x = 0;
+    int y = 0;
+    unsigned actual_b = 0;
+    unsigned actual_g = 0;
+    unsigned actual_r = 0;
+    unsigned actual_a = 0;
+    unsigned expected_b = 0;
+    unsigned expected_g = 0;
+    unsigned expected_r = 0;
+    unsigned expected_a = 0;
+  };
+  std::map<std::string, RealAlphaSample> real_cef_raw_samples_;
+  std::map<std::string, RealAlphaSample> real_cef_composition_samples_;
   void* last_handle_ = nullptr;
   std::uint64_t child_process_launches_ = 0;
   std::uint64_t gpu_process_launches_ = 0;
