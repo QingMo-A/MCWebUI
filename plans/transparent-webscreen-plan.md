@@ -127,10 +127,11 @@ The automated alpha/input gate is now complete: three bounded CEF144
 lifecycles with `DurationMs=0` and `-AutoInput` exited 0 after modal Escape
 then browser Escape. Strict JSON parsing found five passing raw CEF samples,
 five passing fixed-blue composition samples, `alphaModel=premultiplied`, and
-40--41 input observations (64 native messages, 64 CEF dispatches). This
-isolated proof is **READY FOR D3D/OpenGL INTEROP PROOF** only; it does not
-perform interop, JNI, Minecraft, or production-backend work. Human visual
-inspection remains **READY FOR USER VISUAL ACCEPTANCE**, not automated PASS.
+40--41 input observations (64 native messages, 64 CEF dispatches). These
+alpha/input results were the prerequisite for the standalone interop run
+described below; they do not authorize JNI, Minecraft, or production-backend
+work. Human visual inspection remains **READY FOR USER VISUAL ACCEPTANCE**, not
+automated PASS.
 
 The standalone D3D/OpenGL interop gate is also **AUTOMATED PASS on the local
 NVIDIA host**. The proof uses `--opengl-interop`, a private WGL context and
