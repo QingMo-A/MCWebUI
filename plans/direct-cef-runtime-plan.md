@@ -319,12 +319,47 @@ C++ and expose only handles such as `createView`, `destroyView`, `resize`,
 JCEF's object graph in Java. A dedicated `mcwebui-cef-helper.exe` may be safer
 than assigning all subprocess roles to Minecraft's Java executable.
 
-## 12. D3D/OpenGL next step
+## 12. Standalone D3D/OpenGL interop proof (2026-08-13)
 
-Do not implement WGL/DX interop in this checkpoint. The isolated alpha/input
-proof now authorizes a separate `WGL_NV_DX_interop2` proof to evaluate adapter
-identity, synchronization, texture-pool lifetime, and Minecraft render-thread
-ownership; none of that work is included here.
+The proof-only --opengl-interop path is now **AUTOMATED PASS** on this
+Windows host. It uses a dedicated WGL context/thread and a separate hidden
+top-level HWND/DC, reuses the existing three-slot D3D11 mailbox, and registers
+each mailbox texture as a GL_TEXTURE_2D with WGL_ACCESS_READ_ONLY_NV.
+The producer never waits for GL; a busy/owned slot is dropped. The GL thread
+locks the imported object, composites the premultiplied CEF texture with
+GL_ONE/GL_ONE_MINUS_SRC_ALPHA, unlocks, and swaps (or glFlush in headless
+smoke). There is no glTexSubImage, CPU texture upload, or per-frame
+readback. glReadPixels is used only once for the fixed five-point alpha
+acceptance strip.
+
+Capability evidence is host-specific:
+
+| Field | Observed |
+| --- | --- |
+| GL vendor | NVIDIA Corporation |
+| GL renderer | NVIDIA GeForce RTX 5060 Ti/PCIe/SSE2 |
+| GL version | 4.6.0 NVIDIA 591.86 |
+| WGL extensions | WGL_NV_DX_interop, WGL_NV_DX_interop2 |
+| DXGI adapter | NVIDIA GeForce RTX 5060 Ti |
+| DXGI LUID | high 0, low 59869 |
+| wglDXOpenDeviceNV | succeeded; last error 0 |
+| registration / expected slots | 3 / 3 in complete alpha run |
+| lock / unlock failures | 0 / 0 |
+
+The full visible 60-target run passed real CEF raw alpha, full-frame fixed-blue
+GL composition (RGBA channel mapping, textureYFlipped=true), and the complete
+native input matrix; cleanup reached WGL context deletion with no residual
+process. GL target smokes at 60/120/144 completed with 102/205/248 GL frames
+and no lock/unlock failures (these are GL presentation smokes, not Web FPS
+claims). Ten bounded 700 ms headless lifecycles all exited cleanly with
+balanced lock/unlock accounting.
+
+This is an NVIDIA-only capability proof. No AMD/Intel fallback or alternate
+interop backend is implemented; unsupported capability must remain
+UNSUPPORTED/FAILED, never CPU fallback. Manual world/rounded-corner/scanout
+inspection remains **READY FOR USER ACCEPTANCE**. The next authorized step is a
+thin standalone JNI/interop design only; no JNI, Minecraft, targets, or
+production backend is integrated here.
 
 ## 13. Packaging implications
 

@@ -132,6 +132,19 @@ isolated proof is **READY FOR D3D/OpenGL INTEROP PROOF** only; it does not
 perform interop, JNI, Minecraft, or production-backend work. Human visual
 inspection remains **READY FOR USER VISUAL ACCEPTANCE**, not automated PASS.
 
+The standalone D3D/OpenGL interop gate is also **AUTOMATED PASS on the local
+NVIDIA host**. The proof uses `--opengl-interop`, a private WGL context and
+top-level hidden window/DC, the existing three-slot D3D mailbox, read-only
+`WGL_NV_DX_interop2` registration, explicit lock/unlock ownership, and no CPU
+fallback. The full-frame fixed-blue GL composition sampled all five real CEF
+alpha points with RGBA mapping and `textureYFlipped=true`; the native input
+matrix and cleanup passed. Capability identity was NVIDIA GeForce RTX 5060 Ti,
+LUID high 0/low 59869, with WGL_NV_DX_interop and WGL_NV_DX_interop2. AMD/Intel
+fallback is not implemented. Target smokes at 60/120/144 and ten bounded
+lifecycle runs passed as GL presentation evidence only, never Web FPS claims.
+Manual world/rounded-corner/scanout inspection remains **READY FOR USER
+ACCEPTANCE**. See `plans/d3d-opengl-interop-plan.md`.
+
 ## Future implementation boundary
 
 If a later official CEF/driver combination passes all proof gates, keep the

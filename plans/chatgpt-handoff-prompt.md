@@ -175,6 +175,18 @@ Important review findings at this checkpoint:
     on 2026-08-13. CEF5845 compatibility remains build/smoke verified with the
     1..60 clamp. Human visual acceptance is manual and is not an automated PASS.
 
+12. The standalone opengl-interop proof passes on the local NVIDIA GeForce RTX
+    5060 Ti host: WGL_NV_DX_interop/interop2 and all entry points are present,
+    wglDXOpenDeviceNV succeeds, and the existing three-slot D3D mailbox is
+    consumed through read-only GL registrations. Full-frame fixed-blue
+    composition passes all five real CEF alpha samples with RGBA mapping and
+    textureYFlipped=true; native input, 60/120/144 GL smokes, ten bounded
+    lifecycles, and teardown pass. This is NVIDIA-only evidence: AMD/Intel
+    fallback is not implemented, and missing capability remains
+    UNSUPPORTED/FAILED without CPU fallback. Manual visual inspection remains
+    READY FOR USER ACCEPTANCE; do not claim Minecraft/JNI integration. See
+    plans/d3d-opengl-interop-plan.md.
+
 ### Near-term project direction
 
 Before adding a large component library, finish the real transport and make the playground a **component showcase + integration laboratory**.
