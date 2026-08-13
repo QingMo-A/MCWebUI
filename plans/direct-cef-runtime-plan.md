@@ -379,6 +379,7 @@ measurement output is committed in this repository.
 
 **Verdict B: modern accelerated OSR plus a GPU-only mailbox compositor is
 verified, and configured high-refresh CEF delivery reaches approximately 64/s
-at 120/144 requests but not 120/144 distinct generations.** Real CEF alpha and
-native input are verified in the isolated proof; manual visual acceptance and
-interop remain separate gates, and no Minecraft integration is included.
+at 120/144 requests but not 120/144 distinct generations.** Real CEF alpha,
+native input, and the standalone NVIDIA D3D/OpenGL interop gate are verified in
+the isolated proof; manual visual acceptance and production integration remain
+separate gates, and no Minecraft integration is included.
