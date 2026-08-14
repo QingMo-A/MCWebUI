@@ -1,13 +1,13 @@
 package dev.qingmo.mcwebui.target.neoforge1211;
 
-import dev.qingmo.mcwebui.bridge.BridgeCapability;
+import dev.qingmo.mcwebui.api.WebAppDefinition;
+import dev.qingmo.mcwebui.api.WebAppRegistry;
 import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
 import dev.qingmo.mcwebui.bridge.WebBridge;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntime;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeDiscovery;
 import dev.qingmo.mcwebui.nativecef.ValidatedDirectCefRuntime;
 import dev.qingmo.mcwebui.security.WebOrigin;
-import dev.qingmo.mcwebui.security.WebPermissionPolicy;
 import dev.qingmo.mcwebui.state.WebStateStore;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +15,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.net.URLClassLoader;
 import java.time.Duration;
-import java.util.EnumSet;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,7 +22,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Opt-in, real CEF/JNI/Vue/Java bridge acceptance. Normal test runs skip this class. */
 class DirectCefBridgeIntegrationTest {
-    @Test void realVuePageCompletesTheJavaHandshake() throws Exception {
+    @Test void registeredProviderPageCompletesHandshakeAndProducesAFrame() throws Exception {
         assumeTrue(Boolean.getBoolean("mcwebui.directCef.integration"));
         String configuredUrl = System.getProperty("mcwebui.directCef.integration.url", "").trim();
         String configuredRuntime = System.getProperty("mcwebui.directCef.integration.runtimeDir", "").trim();
@@ -49,16 +48,14 @@ class DirectCefBridgeIntegrationTest {
         state.publish("demo.counter", 0);
         BridgeDispatcher dispatcher = new BridgeDispatcher().register("demo.ping",
                 request -> Map.of("echo", request.payload().getOrDefault("message", "")));
-        WebPermissionPolicy permissions = new WebPermissionPolicy(EnumSet.of(
-                BridgeCapability.HANDSHAKE, BridgeCapability.RPC,
-                BridgeCapability.STATE, BridgeCapability.EVENTS), false);
-
         try (URLClassLoader frontendLoader = new URLClassLoader(
-                     new java.net.URL[]{frontendResources.toUri().toURL()}, null);
-             BundledWebPageServer pageServer = configuredUrl.isEmpty()
-                     ? BundledWebPageServer.start(frontendLoader) : null;
-             WebBridge bridge = new WebBridge(WebOrigin.mcui("playground.mcwebui"),
-                     permissions, dispatcher, state);
+                     new java.net.URL[]{frontendResources.toUri().toURL()}, null)) {
+            WebAppDefinition app = NeoForgeBuiltinApps.playgroundForLoader(frontendLoader, dispatcher);
+            WebAppRegistry.process().register(app);
+            try (BundledWebPageServer pageServer = configuredUrl.isEmpty()
+                     ? BundledWebPageServer.start(app) : null;
+             WebBridge bridge = new WebBridge(WebOrigin.mcui(NeoForgeWebAppRoutes.host(app.id())),
+                     app.permissions(), app.bridge(), state);
              DirectCefRuntime runtime = DirectCefRuntime.create(validatedRuntime,
                      configuredUrl.isEmpty() ? pageServer.url().toString() : configuredUrl,
                      cache, 0L, 854, 480, 60)) {
@@ -84,9 +81,20 @@ class DirectCefBridgeIntegrationTest {
                 }
                 assertTrue(host.connected(), () -> "Direct CEF page did not handshake: "
                         + runtime.diagnosticsJson());
+                long paintDeadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
                 String diagnostics = runtime.diagnosticsJson();
+                while (!diagnostics.matches(".*\"publishedGenerations\":[1-9][0-9]*.*")
+                        && System.nanoTime() < paintDeadline) {
+                    runtime.requestFrame();
+                    Thread.sleep(5);
+                    diagnostics = runtime.diagnosticsJson();
+                }
                 assertTrue(diagnostics.contains("\"bridgeBootstrapInstalled\":true"), diagnostics);
                 assertTrue(diagnostics.matches(".*\"bridgeHandshakesCompleted\":[1-9][0-9]*.*"), diagnostics);
+                assertTrue(diagnostics.matches(".*\"publishedGenerations\":[1-9][0-9]*.*"), diagnostics);
+            }
+            } finally {
+                WebAppRegistry.process().clear();
             }
         }
     }

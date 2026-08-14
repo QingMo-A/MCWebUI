@@ -3,6 +3,11 @@ package dev.qingmo.mcwebui.target.neoforge1211;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import dev.qingmo.mcwebui.api.WebAppDefinition;
+import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
+import dev.qingmo.mcwebui.resource.WebResourceLocation;
+import dev.qingmo.mcwebui.resource.WebResourceRequest;
+import dev.qingmo.mcwebui.resource.WebResourceResponse;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -13,14 +18,14 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
 /**
- * Serves the bundled playground without making the Direct CEF runtime depend on
+ * Serves one registered WebApp without making the Direct CEF runtime depend on
  * a separately launched development HTTP server.
  *
  * <p>The server binds only to IPv4 loopback and uses a fresh, unguessable path
@@ -29,7 +34,6 @@ import java.util.concurrent.ThreadFactory;
  * its exact URL key rather than trusting every page on localhost.</p>
  */
 final class BundledWebPageServer implements AutoCloseable {
-    private static final String RESOURCE_ROOT = "web/playground/";
     private static final String TOKEN_ROOT = "/__mcwebui/";
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int TOKEN_BYTES = 24;
@@ -40,31 +44,36 @@ final class BundledWebPageServer implements AutoCloseable {
     private final URI baseUri;
     private volatile boolean closed;
 
-    private final ClassLoader resourceLoader;
+    private final WebAppDefinition app;
 
     private BundledWebPageServer(HttpServer server, ExecutorService executor, String tokenRoot,
-                                 ClassLoader resourceLoader) {
+                                 WebAppDefinition app) {
         this.server = Objects.requireNonNull(server, "server");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.tokenRoot = Objects.requireNonNull(tokenRoot, "tokenRoot");
-        this.resourceLoader = Objects.requireNonNull(resourceLoader, "resourceLoader");
+        this.app = Objects.requireNonNull(app, "app");
         InetSocketAddress address = server.getAddress();
         this.baseUri = URI.create("http://127.0.0.1:" + address.getPort() + tokenRoot);
     }
 
     /** Starts an isolated server on an ephemeral loopback port. */
     static BundledWebPageServer start() {
-        return start(BundledWebPageServer.class.getClassLoader());
+        return start(NeoForgeBuiltinApps.playgroundForLoader(
+                BundledWebPageServer.class.getClassLoader(), new BridgeDispatcher()));
     }
 
     static BundledWebPageServer start(ClassLoader resourceLoader) {
+        return start(NeoForgeBuiltinApps.playgroundForLoader(resourceLoader, new BridgeDispatcher()));
+    }
+
+    static BundledWebPageServer start(WebAppDefinition app) {
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(randomToken());
         String tokenRoot = TOKEN_ROOT + token + "/";
         ExecutorService executor = Executors.newFixedThreadPool(2, new ServerThreadFactory());
         HttpServer server = null;
         try {
             server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
-            BundledWebPageServer pageServer = new BundledWebPageServer(server, executor, tokenRoot, resourceLoader);
+            BundledWebPageServer pageServer = new BundledWebPageServer(server, executor, tokenRoot, app);
             server.createContext("/", pageServer::handle);
             server.setExecutor(executor);
             server.start();
@@ -134,17 +143,20 @@ final class BundledWebPageServer implements AutoCloseable {
         }
         if (!path.startsWith(tokenRoot) || path.indexOf('\0') >= 0 || path.indexOf('\\') >= 0) return null;
         String relative = path.substring(tokenRoot.length());
-        if (relative.isEmpty()) relative = "index.html";
+        if (relative.isEmpty()) relative = app.entry();
         if (relative.startsWith("/") || relative.endsWith("/")) return null;
         String[] components = relative.split("/", -1);
         for (String component : components) {
             if (component.isEmpty() || ".".equals(component) || "..".equals(component)) return null;
         }
-        String resourceName = RESOURCE_ROOT + relative;
-        try (var stream = resourceLoader.getResourceAsStream(resourceName)) {
-            if (stream == null) return null;
-            return new Resource(stream.readAllBytes(), mime(relative));
-        } catch (IOException failure) {
+        try {
+            WebResourceLocation location = new WebResourceLocation(app.id().namespace(),
+                    "/" + app.id().path() + "/" + relative);
+            WebResourceResponse response = app.resources().resolve(
+                    new WebResourceRequest(location, "GET", Map.of()));
+            if (response == null || response.status() != 200) return null;
+            return new Resource(response.body(), response.mimeType());
+        } catch (RuntimeException failure) {
             return null;
         }
     }
@@ -157,25 +169,6 @@ final class BundledWebPageServer implements AutoCloseable {
         try (OutputStream output = exchange.getResponseBody()) {
             output.write(body);
         }
-    }
-
-    private static String mime(String path) {
-        int dot = path.lastIndexOf('.');
-        String extension = dot >= 0 ? path.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
-        return switch (extension) {
-            case "html", "htm" -> "text/html; charset=utf-8";
-            case "js", "mjs" -> "text/javascript; charset=utf-8";
-            case "css" -> "text/css; charset=utf-8";
-            case "json", "map" -> "application/json; charset=utf-8";
-            case "svg" -> "image/svg+xml";
-            case "png" -> "image/png";
-            case "jpg", "jpeg" -> "image/jpeg";
-            case "gif" -> "image/gif";
-            case "ico" -> "image/x-icon";
-            case "woff" -> "font/woff";
-            case "woff2" -> "font/woff2";
-            default -> "application/octet-stream";
-        };
     }
 
     @Override

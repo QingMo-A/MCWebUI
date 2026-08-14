@@ -1,7 +1,8 @@
 package dev.qingmo.mcwebui.target.neoforge1211;
 
 import dev.qingmo.mcwebui.backend.BrowserBackend;
-import dev.qingmo.mcwebui.bridge.BridgeCapability;
+import dev.qingmo.mcwebui.api.WebAppDefinition;
+import dev.qingmo.mcwebui.api.WebViewportPolicy;
 import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
 import dev.qingmo.mcwebui.input.WebFocusEvent;
 import dev.qingmo.mcwebui.input.WebKeyEvent;
@@ -13,19 +14,17 @@ import dev.qingmo.mcwebui.runtime.WebRuntime;
 import dev.qingmo.mcwebui.runtime.WebView;
 import dev.qingmo.mcwebui.runtime.WebViewConfig;
 import dev.qingmo.mcwebui.security.WebOrigin;
-import dev.qingmo.mcwebui.security.WebPermissionPolicy;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeDiscovery;
 import dev.qingmo.mcwebui.nativecef.ValidatedDirectCefRuntime;
 import net.minecraft.client.Minecraft;
 
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
 /** Single NeoForge screen-owned composition of common view, MCEF surface and bridge session. */
 final class NeoForgeWebSession implements AutoCloseable {
-    private static final String PLAYGROUND_HOST = "playground.mcwebui";
+    private final WebAppDefinition app;
     private final WebRuntime runtime;
     private final BrowserBackend backend;
     private final boolean directBackend;
@@ -48,11 +47,18 @@ final class NeoForgeWebSession implements AutoCloseable {
     private long prewarmDeadlineNanos;
 
     NeoForgeWebSession(BridgeDispatcher dispatcher, NeoForgeDemoBridge demo) {
-        Objects.requireNonNull(dispatcher, "dispatcher");
-        this.demo = Objects.requireNonNull(demo, "demo");
-        this.runtime = new DefaultWebRuntime(new WebPermissionPolicy(EnumSet.of(
-                BridgeCapability.HANDSHAKE, BridgeCapability.RPC, BridgeCapability.EVENTS,
-                BridgeCapability.STATE, BridgeCapability.INPUT, BridgeCapability.CLIPBOARD), false), dispatcher);
+        this(NeoForgeBuiltinApps.playground(Objects.requireNonNull(dispatcher, "dispatcher")),
+                Objects.requireNonNull(demo, "demo"));
+    }
+
+    NeoForgeWebSession(WebAppDefinition app) {
+        this(app, null);
+    }
+
+    private NeoForgeWebSession(WebAppDefinition app, NeoForgeDemoBridge demo) {
+        this.app = Objects.requireNonNull(app, "app");
+        this.demo = demo;
+        this.runtime = new DefaultWebRuntime(app.permissions(), app.bridge());
         this.backend = createBackend();
         this.directBackend = backend instanceof DirectCefBackend;
         this.directFramePacer = directBackend
@@ -64,7 +70,9 @@ final class NeoForgeWebSession implements AutoCloseable {
         backendName = selected.isEmpty() ? "mcef" : selected;
         if (selected.isEmpty() || selected.equals("mcef")) return new NeoForgeMcefBackend();
         if (!selected.equals("direct-cef")) throw new IllegalStateException("Unknown MCWebUI browser backend: " + selected);
-        String url = System.getProperty("mcwebui.directCef.url", "").trim();
+        // The URL override belongs to the built-in proof runner. Consumer apps always
+        // use their own isolated capability URL and provider-backed loopback server.
+        String url = demo == null ? "" : System.getProperty("mcwebui.directCef.url", "").trim();
         String runtimeOverride = System.getProperty(DirectCefRuntimeDiscovery.RUNTIME_OVERRIDE_PROPERTY, "").trim();
         String cacheOverride = System.getProperty(DirectCefRuntimeDiscovery.CACHE_OVERRIDE_PROPERTY, "").trim();
         java.nio.file.Path instanceRoot = directCefInstanceRoot();
@@ -79,7 +87,7 @@ final class NeoForgeWebSession implements AutoCloseable {
             validateDirectBackendConfiguration(System.getProperty("os.name", ""),
                     "http://127.0.0.1:1/", validatedRuntime);
             try {
-                bundledPageServer = BundledWebPageServer.start();
+                bundledPageServer = BundledWebPageServer.start(app);
                 url = bundledPageServer.url().toString();
                 System.out.println("[MCWebUI] Direct CEF bundled page server started on 127.0.0.1:"
                         + bundledPageServer.port() + " (capability path redacted)");
@@ -168,7 +176,9 @@ final class NeoForgeWebSession implements AutoCloseable {
         this.guiScale = requireScale(guiScale);
         this.minecraftGuiWidth = requireDimension(guiWidth, "guiWidth");
         this.minecraftGuiHeight = requireDimension(guiHeight, "guiHeight");
-        this.followGuiSize = NeoForgeMod.CLIENT_CONFIG.followGuiSize();
+        this.followGuiSize = demo != null
+                ? NeoForgeMod.CLIENT_CONFIG.followGuiSize()
+                : app.options().viewportPolicy() == WebViewportPolicy.GUI;
         // The default GUI mode uses Screen's logical coordinates directly. In framebuffer mode,
         // scale the browser back to physical-equivalent pixels so GUI scale 1 and 2 keep the
         // same CSS density in a fixed-size window; resize updates that physical viewport.
@@ -177,8 +187,11 @@ final class NeoForgeWebSession implements AutoCloseable {
         this.browserViewportWidth = width;
         this.browserViewportHeight = height;
         try {
-            view = runtime.createView(new WebViewConfig(WebOrigin.mcui(PLAYGROUND_HOST), "/index.html", width, height));
+            String appHost = NeoForgeWebAppRoutes.host(app.id());
+            view = runtime.createView(new WebViewConfig(WebOrigin.mcui(appHost),
+                    "/" + app.entry(), width, height));
             view.initialize();
+            app.bridgeInitializer().accept(view.bridge());
             surface = (NeoForgeRenderableSurface) backend.createSurface(view.config(), view.bridge());
             view.setVisible(activate);
             visible = activate;
@@ -187,15 +200,17 @@ final class NeoForgeWebSession implements AutoCloseable {
             // WasResized callback, which would otherwise invalidate the mailbox while the
             // hidden prewarm is waiting for its first texture.
             if (!directBackend) surface.resize(width, height);
-            surface.load("mcui://" + PLAYGROUND_HOST + "/index.html");
+            surface.load(NeoForgeWebAppRoutes.entryUrl(app));
             // A Direct CEF warm session remains browser-visible (but is not drawn or
             // focused) just long enough to create its first accelerated texture. Hiding
             // it immediately would make CEF suppress the exact paint we are prewarming.
             prewarming = directBackend && !activate;
             prewarmDeadlineNanos = prewarming ? System.nanoTime() + 10_000_000_000L : 0L;
             setSurfaceVisible(activate || prewarming);
-            demo.setDiagnosticsSupplier(this::diagnostics);
-            demo.publishCounter(view.bridge());
+            if (demo != null) {
+                demo.setDiagnosticsSupplier(this::diagnostics);
+                demo.publishCounter(view.bridge());
+            }
             initialized = true;
         } catch (RuntimeException ex) {
             close();
@@ -310,6 +325,7 @@ final class NeoForgeWebSession implements AutoCloseable {
     }
 
     NeoForgeRenderableSurface surface() { return surface; }
+    WebAppDefinition app() { return app; }
     boolean isDirectBackend() { return directBackend; }
     void beginFrame(long frameTimeNanos) {
         if (shouldBeginFrame(closed, visible, view == null ? null : view.state().lifecycle(), surface != null)) {
@@ -342,6 +358,7 @@ final class NeoForgeWebSession implements AutoCloseable {
     private Map<String, Object> diagnostics() {
         LinkedHashMap<String, Object> info = new LinkedHashMap<>();
         info.put("targetId", "neoforge-1.21.1");
+        info.put("webAppId", app.id().toString());
         info.put("loader", "NeoForge");
         info.put("minecraftVersion", "1.21.1");
         info.put("javaVersion", 21);
@@ -428,7 +445,7 @@ final class NeoForgeWebSession implements AutoCloseable {
         logDirectRuntimeEvidence("shutdown");
         if (surface != null) surface.close();
         if (view != null) {
-            demo.removeBridge(view.bridge());
+            if (demo != null) demo.removeBridge(view.bridge());
             view.close();
         }
         runtime.close();

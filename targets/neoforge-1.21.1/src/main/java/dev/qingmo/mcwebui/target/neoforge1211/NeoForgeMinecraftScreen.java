@@ -26,12 +26,12 @@ public final class NeoForgeMinecraftScreen extends Screen {
     }
 
     NeoForgeMinecraftScreen(NeoForgeWebSession session) {
-        super(Component.literal("MCWebUI Runtime Demo"));
+        super(Component.literal("MCWebUI - " + session.app().id()));
         this.session = session;
         this.retainSession = true;
     }
 
-    @Override public boolean isPauseScreen() { return false; }
+    @Override public boolean isPauseScreen() { return session.app().options().pauseGame(); }
 
     @Override protected void init() {
         session.init(width, height, minecraft.getWindow().getGuiScale());
@@ -45,7 +45,7 @@ public final class NeoForgeMinecraftScreen extends Screen {
     }
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        if (session.isDirectBackend()) {
+        if (session.app().options().transparent()) {
             // Screen.render() invokes renderBackground(), which paints an opaque menu over
             // the world. Direct CEF is a transparent overlay, so render only children here.
             for (var renderable : renderables) renderable.render(graphics, mouseX, mouseY, partialTick);
@@ -116,7 +116,10 @@ public final class NeoForgeMinecraftScreen extends Screen {
     @Override public void mouseMoved(double x, double y) { session.mouseMove(x, y); }
     @Override public boolean mouseScrolled(double x, double y, double scrollX, double scrollY) { session.mouseScroll(x, y, scrollX, scrollY); return true; }
     @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) { onClose(); return true; }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && session.app().options().closeOnEsc()) {
+            onClose();
+            return true;
+        }
         session.key(keyCode, scanCode, modifiers, true); return true;
     }
     @Override public boolean keyReleased(int keyCode, int scanCode, int modifiers) { session.key(keyCode, scanCode, modifiers, false); return true; }

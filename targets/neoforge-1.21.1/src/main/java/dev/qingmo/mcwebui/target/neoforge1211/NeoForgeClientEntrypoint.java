@@ -4,6 +4,9 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeDiscovery;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeException;
+import dev.qingmo.mcwebui.api.WebAppDefinition;
+import dev.qingmo.mcwebui.api.WebAppId;
+import dev.qingmo.mcwebui.api.WebAppRegistry;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -29,6 +32,8 @@ public final class NeoForgeClientEntrypoint {
     private static boolean openWhenWarm;
     private static boolean directWarmFrameLogged;
     private static boolean directWarmAttempted;
+    private static NeoForgeWebSession publicSession;
+    private static final PendingWebAppOpen PENDING_PUBLIC_APP = new PendingWebAppOpen();
 
     private NeoForgeClientEntrypoint() { }
 
@@ -64,6 +69,14 @@ public final class NeoForgeClientEntrypoint {
                 }
             } catch (RuntimeException failure) {
                 LOGGER.error("MCWebUI Direct CEF bridge pump failed", failure);
+            }
+        }
+        if (publicSession != null && !publicSession.isClosed()) {
+            try {
+                publicSession.pumpBridge();
+            } catch (RuntimeException failure) {
+                LOGGER.error("MCWebUI registered WebApp bridge pump failed for {}",
+                        publicSession.app().id(), failure);
             }
         }
         if (!direct) ensureMcefWarmSession();
@@ -103,6 +116,7 @@ public final class NeoForgeClientEntrypoint {
 
     static void openDirectWebScreen() {
         try {
+            closePublicSession();
             if (directSession == null || directSession.isClosed()) {
                 NeoForgeWebSession session = new NeoForgeWebSession(BRIDGE.dispatcher, BRIDGE.demo);
                 session.warmUp(MINECRAFT.getWindow().getGuiScaledWidth(),
@@ -138,6 +152,64 @@ public final class NeoForgeClientEntrypoint {
         }
     }
 
+    /** Internal target hook used by the public Developer Preview facade. */
+    public static Screen createRegisteredWebScreen(WebAppId id) {
+        if (!MINECRAFT.isSameThread()) {
+            throw new IllegalStateException("createScreen must be called on the Minecraft client thread; use open instead");
+        }
+        WebAppDefinition definition = WebAppRegistry.process().require(id);
+        if (!directCefSelected() && !backendReady) {
+            throw new IllegalStateException("The selected MCEF backend is not ready");
+        }
+        if (directCefSelected()) {
+            DirectCefRuntimeDiscovery.Probe probe = probeDirectRuntime();
+            if (!probe.valid()) {
+                PENDING_PUBLIC_APP.save(id);
+                Screen previous = MINECRAFT.screen;
+                return new DirectCefRuntimeSetupScreen(NeoForgeWebSession.directCefInstanceRoot(),
+                        probe, previous, NeoForgeClientEntrypoint::continuePendingPublicApp);
+            }
+            // One Direct CEF owner is permitted in the preview. Do not leave the F8
+            // playground alive when a consumer app takes ownership of the runtime.
+            if (directSession != null) {
+                directSession.close();
+                directSession = null;
+            }
+        }
+        if (publicSession != null && !publicSession.isClosed()
+                && publicSession.app().id().equals(id)) {
+            publicSession.activate();
+            return new NeoForgeMinecraftScreen(publicSession);
+        }
+        closePublicSession();
+        publicSession = new NeoForgeWebSession(definition);
+        return new NeoForgeMinecraftScreen(publicSession);
+    }
+
+    /** Schedules a registered WebApp open on Minecraft's client thread. */
+    public static void openRegisteredWebApp(WebAppId id) {
+        WebAppId requested = java.util.Objects.requireNonNull(id, "id");
+        // Fail synchronously with the registry's structured unknown-ID error instead
+        // of throwing later from an opaque scheduled client callback.
+        WebAppRegistry.process().require(requested);
+        MINECRAFT.execute(() -> {
+            Screen next = createRegisteredWebScreen(requested);
+            MINECRAFT.setScreen(next);
+        });
+    }
+
+    private static void continuePendingPublicApp() {
+        WebAppId requested = PENDING_PUBLIC_APP.take();
+        if (requested != null) openRegisteredWebApp(requested);
+    }
+
+    private static void closePublicSession() {
+        if (publicSession != null) {
+            publicSession.close();
+            publicSession = null;
+        }
+    }
+
     static DirectCefRuntimeDiscovery.Probe probeDirectRuntime() {
         String runtimeOverride = System.getProperty(DirectCefRuntimeDiscovery.RUNTIME_OVERRIDE_PROPERTY, "").trim();
         return DirectCefRuntimeDiscovery.probe(NeoForgeWebSession.directCefInstanceRoot(),
@@ -151,6 +223,7 @@ public final class NeoForgeClientEntrypoint {
     }
 
     private static void ensureDirectWarmSession() {
+        if (publicSession != null && !publicSession.isClosed()) return;
         if (directSession != null && !directSession.isClosed()) return;
         // Client ticks begin while NeoForge is still bringing up its loading window. Wait
         // until Minecraft owns a real screen so the synchronous CEF/JNI setup cost is paid
@@ -201,6 +274,8 @@ public final class NeoForgeClientEntrypoint {
             directSession.close();
             directSession = null;
         }
+        closePublicSession();
+        PENDING_PUBLIC_APP.clear();
         warmFrameLogged = false;
         openWhenWarm = false;
         directWarmFrameLogged = false;
