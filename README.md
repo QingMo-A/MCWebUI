@@ -49,14 +49,15 @@ Known limitation: the local in-game pass verified F8 screen open, bundled HTML/J
 
 The Windows GAME_SYNC native checkpoint is recorded in [`plans/frame-pacing-plan.md`](plans/frame-pacing-plan.md). Exact source patches now expose an opt-in External Begin Frame creation path and the Windows amd64 JCEF JNI wrapper builds against the pinned CEF 116/5845 SDK without rebuilding Chromium. A standalone proof builder now produces a matched patched MCEF NeoForge artifact from the exact external source revisions; the client benchmark is still pending, so the result is **PROOF B**, not a runtime FPS claim. Stock mode remains unchanged and GAME_SYNC remains experimental and off by default.
 
-An isolated [Direct CEF runtime proof](plans/direct-cef-runtime-plan.md) now
-removes Minecraft, MCEF, JCEF, and JNI from the measurement. With the same CEF
-116/5845 baseline it verified the real Vue bundle and CPU OSR at ~30 paint/s by
-default and ~55-57 paint/s with 60+ External BeginFrame requests. Requests at
-120/144 did not produce 120/144 browser output: rAF plateaued near 64/s and
-paint near 57/s. Accelerated OSR was requested but emitted no
-`OnAcceleratedPaint`, so Direct CEF remains a standalone feasibility proof and
-is not the default backend.
+The isolated [Direct CEF runtime proof](plans/direct-cef-runtime-plan.md) has
+also progressed into an opt-in Windows NeoForge experimental runtime. Its real
+F8 surface, bridge, input, accelerated mailbox, transparency, and retained
+hidden lifecycle are user-runtime verified. The target now composites CEF's
+premultiplied texture with `ONE / ONE_MINUS_SRC_ALPHA` and records native
+render-lease/interoperability evidence without polling diagnostics per frame.
+Automated Minecraft fullscreen/context-recreation regression, broad hardware
+coverage, and production native distribution remain pending, so MCEF stays the
+default backend and Direct CEF must be enabled explicitly.
 
 ## Requirements
 

@@ -1,6 +1,6 @@
 # NeoForge 1.21.1 Direct CEF proof slice
 
-Status: **VERDICT B / opt-in proof slice** (2026-08-13).
+Status: **VERDICT B / opt-in experimental runtime** (2026-08-14).
 
 This plan covers only the Windows NeoForge 1.21.1 experimental backend. The
 default `mcef` backend remains unchanged. The Direct CEF path is selected only
@@ -66,10 +66,10 @@ binaries, or result logs.
 | Java/NeoForge compile and tests | PASS | 10 target tests; frontend typecheck/build and all-target build pass |
 | Bundled page + real CEF/Java handshake | PASS | Process-owned random loopback URL served the built Vue bundle; renderer bootstrap, CefQuery, and Java WebBridge handshake completed |
 | Direct class-path startup | PASS | Mod List was MCWebUI/Minecraft/NeoForge (MCEF absent); backend selection logged `direct-cef`; NVIDIA GL 4.6 startup reached resource loading |
-| Direct F8/native surface in Minecraft | USER-VERIFIED / REGRESSION READY | User observed the Direct page and controls in game; automated WGL/fullscreen scanout remains separate |
+| Direct F8/native surface in Minecraft | USER RUNTIME VERIFIED | User observed the Direct page, bridge and controls in game; repeatable automated world/F8/fullscreen regression remains pending |
 | Hidden Direct prewarm | PASS | Bounded client run created the native runtime, loaded Vue, completed the Java bridge handshake and produced the first accelerated texture before F8; F8 reused that retained session |
 | External-frame pacing | PASS | Game render signals remain independent, while Direct BeginFrame requests use a fractional 60/120/144 Hz cap; 180 host signals deterministically produce 60/120/144 requests |
-| Minecraft WGL/D3D/OpenGL mailbox | NOT VERIFIED | Standalone NVIDIA interop proof is separate and must not be called Minecraft integration |
+| Minecraft WGL/D3D/OpenGL mailbox | USER RUNTIME VERIFIED / AUTOMATED REGRESSION PENDING | A real Direct CEF texture was consumed and drawn by the Minecraft Screen on this NVIDIA host; one-shot native markers and counters now distinguish context/device/registration/lease/draw evidence, but an automated world/fullscreen matrix is still pending |
 | Human world/alpha/rounded-corner/scanout acceptance | READY FOR USER ACCEPTANCE | Requires an interactive F8 run after the loading screen is gone |
 
 The direct client run remains **Verdict B**: opt-in selection, class-path
@@ -78,14 +78,66 @@ Vue/CEF/Java bridge are implemented. Production packaging and a repeatable
 automated Minecraft WGL/fullscreen matrix are still pending; do not infer
 production readiness from this checkpoint.
 
+## Premultiplied composition and render lease
+
+The Direct CEF texture contract is `PREMULTIPLIED`: source RGB already contains
+the source alpha multiplication. Minecraft therefore uses the typed target-local
+blend policy `ONE / ONE_MINUS_SRC_ALPHA` for RGB and alpha. The previous
+`SRC_ALPHA / ONE_MINUS_SRC_ALPHA` RGB factors multiplied translucent CEF color
+twice and could darken panels, text antialiasing, rounded corners and shadows.
+The MCEF surface remains `OPAQUE` with blending disabled. These semantics live
+only in the NeoForge surface capability and do not leak texture/OpenGL types
+into common.
+
+Once `beginRenderFrame()` succeeds, texture lookup (including `textureId <= 0`),
+Minecraft state setup, buffer creation and the shader draw all live inside one
+outer `try/finally`; `endRenderFrame()` is the sole release path. Render state
+restoration resets the alpha policy, shader texture and depth state before that
+outer release. A successful `BufferUploader.drawWithShader` explicitly marks
+the native generation as drawn; acquiring a WGL texture is not mislabeled as a
+Minecraft draw.
+
+## Runtime evidence and invariants
+
+Native counters are primitive atomics and diagnostics are sampled only at
+prewarm completion, hide/shutdown or an explicit evidence request. They expose:
+
+- interop device open state, current registered slots and registration failures;
+- render begin attempts/successes/ends;
+- interop locks/unlocks and their failures;
+- published, newly drawn and repeated generations, producer drops and current
+  generation;
+- resize and actual HGLRC/HDC context-refresh counts.
+
+One-shot markers identify the first Minecraft GL context, interop device,
+mailbox registration, render lease and successful Screen draw. A result may be
+called PASS only when `renderBeginSuccesses == renderEnds`,
+`interopLocks == interopUnlocks`, and registration/lock/unlock failures are all
+zero. The runner's optional `-CollectEvidence` writes a bounded evidence JSON;
+absence of a first real draw is `USER_ACTION_REQUIRED`, never an inferred PASS.
+
 ## Lifecycle and ownership notes
 
 CEF initialization and shutdown are owned by the thread that creates the native
 runtime. Browser close is asynchronous and bounded; the native destructor does
 not unload `libcef.dll` while Chromium callbacks may still drain. Java close is
-idempotent and screen close is the only owner of the surface. A future runtime
-integration must add an explicit owner-thread gate and a render-thread
-registration/unregistration handshake before shipping this backend.
+idempotent, the retained session owns the surface, and Screen close only hides
+and detaches it. Native CEF lifecycle calls have an owner-thread gate; WGL
+registration and lease operations run on Minecraft's render thread with the
+current HGLRC/HDC identity. A future multi-WebView process service still needs
+to centralize process-global CEF initialization and shutdown before this can be
+called production-ready.
+
+Ownership is deliberately split into three scopes:
+
+- **PROCESS RUNTIME**: process-global CEF initialization, subprocess/helper and
+  native libraries. The current experiment approximates this with one retained
+  Direct session; future WebViews must not each call `CefInitialize`.
+- **SESSION / VIEW**: browser, bridge session, D3D mailbox and bundled loopback
+  resource server.
+- **SCREEN ATTACHMENT**: visibility, focus, input ownership and the Minecraft
+  render lease. ESC detaches/hides the Screen without destroying the warm
+  session.
 
 Direct prewarm deliberately runs on the normal Minecraft client/render tick;
 moving CEF/WGL initialization to a worker thread would violate that ownership
@@ -121,3 +173,35 @@ It applies one group opacity to the page background and UI while leaving the
 control itself visible at 0%, so the user can always restore it. In Direct CEF
 this reveals the live Minecraft world through the already verified
 premultiplied-alpha path; final visual appearance remains a manual F8 check.
+
+## Context recreation
+
+`refreshGlContext()` is a hint to re-sample the current WGL identity, not an
+instruction to rebuild interop on every GUI resize. The native render thread
+compares both `wglGetCurrentContext()` and `wglGetCurrentDC()`. Only an actual
+identity change abandons/unregisters old-context objects, opens a new interop
+device and re-registers mailbox slots. Rebind and resize replacement skip the
+transition frame so teardown and `wglDXLockObjectsNV` never occur in the same
+fullscreen-change opportunity. Automated Minecraft window/fullscreen cycling
+remains pending even though the user runtime path is established.
+
+## Future runtime budget matrix
+
+No total Direct CEF CPU/GPU-memory number is claimed yet. A future benchmark
+must measure the following states and viewports with the same tools and sampling
+window:
+
+| Runtime state | 1280x720 | 1920x1080 | 2560x1440 / nearest current |
+| --- | --- | --- | --- |
+| Cold runtime | process private/working set, child count, startup time | same | same |
+| Warm hidden runtime | CPU idle, frame-time impact, dedicated/shared GPU memory if reliable | same | same |
+| Visible static WebScreen | CPU, frame-time, CEF child count, GPU memory | same | same |
+| Visible animated WebScreen | CPU, frame-time distribution, GPU memory | same | same |
+
+The known host-texture budget remains 13.85 MiB for one 2560x1418 BGRA texture
+and 41.54 MiB for three slots. It excludes the CEF compositor/source texture,
+Minecraft framebuffer and driver allocations. Future idle policies may be
+`KEEP_WARM`, `RELEASE_AFTER_TIMEOUT` or `AGGRESSIVE_RELEASE`; this checkpoint
+keeps `KEEP_WARM` and does not implement a policy system. See
+`plans/direct-cef-distribution-plan.md` for the separate design-only runtime
+delivery boundary.

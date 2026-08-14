@@ -103,7 +103,7 @@ After review, give a concrete verdict and normally one autonomous professional C
 
 ## Current checkpoint
 
-Checkpoint date: **2026-08-12**
+Checkpoint date: **2026-08-14**
 
 Historical branch HEAD before this handoff file was added: `2a6fb16f5586e2809c3313d943b01fee8402c3dd` (`clarify neoforge scope checkpoint`). Always re-fetch current `bridge` before acting.
 
@@ -230,6 +230,39 @@ Important review findings at this checkpoint:
     matrix and native distribution are still pending. Do not generalize the
     standalone NVIDIA interop result to other vendors. See
     `plans/direct-cef-neoforge-plan.md`.
+
+14. The Direct CEF NeoForge path is now treated as an experimental runtime,
+    not an unknown Minecraft feasibility proof. The user has run the real F8
+    surface, bridge and input path; its status is **USER RUNTIME VERIFIED /
+    AUTOMATED REGRESSION PENDING**. Production native distribution and broad
+    hardware support remain NOT IMPLEMENTED.
+
+    The target-local surface contract now owns `OPAQUE` versus
+    `PREMULTIPLIED` semantics. Direct CEF uses typed Minecraft blend factors
+    `ONE / ONE_MINUS_SRC_ALPHA` for RGB and alpha; the old
+    `SRC_ALPHA / ONE_MINUS_SRC_ALPHA` path incorrectly multiplied CEF's
+    premultiplied RGB twice. MCEF remains opaque with blending disabled. The
+    complete texture lookup/state/buffer/draw path is covered by one render
+    lease `try/finally`, including the `textureId <= 0` return, and a successful
+    Minecraft draw explicitly marks its native generation.
+
+    Native diagnostics now expose current WGL registration state, balanced
+    begin/end and lock/unlock counters, failures, published/new/repeated draws,
+    producer drops, resize/context refresh counts and one-shot Minecraft
+    context/interop/registration/lease/draw checkpoints. Ordinary resize only
+    re-samples HGLRC/HDC; actual identity change performs the safe rebind and
+    skips the transition frame. Hidden `WasHidden(true)` still suppresses
+    BeginFrame, accelerated paint copies and GL leases. The optional runner
+    evidence file never reports PASS without balanced invariants and a real
+    first-draw marker.
+
+    Runtime ownership is split conceptually into process-global CEF resources,
+    retained browser/session/mailbox/bridge resources, and Screen attachment
+    focus/input/drawing. `plans/direct-cef-distribution-plan.md` is design-only:
+    it specifies instance-scoped immutable runtimes, a versioned manifest,
+    per-file SHA-256, temporary installation plus atomic publication,
+    multi-instance locking and shared platform ownership. No downloader,
+    updater, automatic install or production runtime archive was added.
 
 ### Near-term project direction
 

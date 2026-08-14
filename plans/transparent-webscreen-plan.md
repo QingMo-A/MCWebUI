@@ -155,14 +155,20 @@ unchanged. The bounded runner excludes MCEF/JCEF from the direct process to
 avoid loading two process-global CEF versions, passes the pinned CEF144 helper
 through `browser_subprocess_path`, and records a clean native lifecycle smoke.
 
-The direct client reached NeoForge GL/resource startup with Mod List
-MCWebUI/Minecraft/NeoForge and logged the selected backend. The final bounded
-run sent F8 only while the title was still `Minecraft: NeoForge Loading...`, so
-no Direct CEF native diagnostics or Minecraft mailbox frame were observed.
-This is **VERDICT B**, not a Minecraft integration PASS: F8/native/WGL
-interop, world composition, and visual scanout remain **READY FOR USER
-ACCEPTANCE**. The standalone NVIDIA interop result above remains valid only for
-its private proof executable.
+Subsequent user runs established the real Minecraft path: F8 displayed and
+consumed the Direct CEF texture, the Java bridge connected, and browser input
+controls worked. This evidence is now classified **USER RUNTIME VERIFIED**,
+not `NOT VERIFIED`. Repeatable automated world entry, opacity/composition
+inspection, fullscreen context recreation and cross-hardware coverage remain
+**AUTOMATED REGRESSION PENDING**.
+
+Minecraft now composites the verified premultiplied CEF texture with
+`ONE / ONE_MINUS_SRC_ALPHA` instead of multiplying RGB by source alpha a second
+time. The existing 0--100% WebScreen opacity slider is the manual world-reveal
+acceptance tool. One-shot native checkpoints and balanced render/interop
+counters distinguish a WGL lease from a texture actually submitted by the
+Screen. The standalone NVIDIA interop result above remains a separate automated
+capability proof and must not be generalized to other vendors.
 
 ## Future implementation boundary
 
