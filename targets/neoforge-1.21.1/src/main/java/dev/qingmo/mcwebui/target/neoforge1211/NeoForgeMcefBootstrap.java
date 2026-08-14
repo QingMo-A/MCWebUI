@@ -28,9 +28,10 @@ final class NeoForgeMcefBootstrap {
     private static void installCustomSchemeRegistration() {
         try {
             CefApp.addAppHandler(new CefAppHandlerAdapter(new String[]{
-                    "--autoplay-policy=no-user-gesture-required",
-                    "--disable-web-security",
-                    "--enable-widevine-cdm"
+                    // The showcase intentionally starts media without a gesture. This is
+                    // independent from origin/CORS enforcement and can be removed by an
+                    // embedding application that does not need autoplay.
+                    "--autoplay-policy=no-user-gesture-required"
             }) {
                 @Override public void onRegisterCustomSchemes(org.cef.callback.CefSchemeRegistrar registrar) {
                     boolean added = registrar.addCustomScheme("mcui", true, false, true, true, true, false, true);

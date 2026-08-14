@@ -6,7 +6,14 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 
-/** Capability gate shared by all bridge implementations. */
+/**
+ * Capability gate shared by all bridge implementations.
+ *
+ * <p>{@code allowExternalNetwork} is application intent metadata for a backend
+ * that implements request interception. It is not, by itself, a Chromium
+ * network sandbox or firewall. Current bundled views reject external-network
+ * mode in {@code WebViewConfig}.</p>
+ */
 public final class WebPermissionPolicy {
     private final Set<BridgeCapability> localCapabilities;
     private final boolean allowExternalNetwork;
