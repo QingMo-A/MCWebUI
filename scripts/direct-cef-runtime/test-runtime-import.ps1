@@ -49,7 +49,8 @@ foreach ($item in @(Get-ChildItem -LiteralPath $bin -Force)) {
     Copy-Item -LiteralPath $item.FullName -Destination $prepared -Recurse -Force
 }
 & (Join-Path $repo 'scripts\direct-cef-runtime\generate-runtime-manifest.ps1') -RuntimeRoot $prepared
-if ($LASTEXITCODE -ne 0) { throw 'Runtime manifest generation failed' }
+# In-process PowerShell scripts report failure by throwing. $LASTEXITCODE is
+# only meaningful for native processes and may still be null/stale here.
 $prepared = (Resolve-Path -LiteralPath $prepared).Path
 
 $packageOutput = Join-Path $PackageDirectory ('mcwebui-direct-cef-runtime-proof-' + [guid]::NewGuid().ToString('N') + '.zip')
@@ -59,7 +60,6 @@ $packageParams = @{
 }
 if ($DeterminismCheck) { $packageParams.DeterminismCheck = $true }
 & (Join-Path $repo 'scripts\direct-cef-runtime\package-runtime.ps1') @packageParams
-if ($LASTEXITCODE -ne 0) { throw 'Runtime package creation failed' }
 $package = (Resolve-Path -LiteralPath $packageOutput).Path
 $packageHash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToUpperInvariant()
 $packageSize = (Get-Item -LiteralPath $package).Length
