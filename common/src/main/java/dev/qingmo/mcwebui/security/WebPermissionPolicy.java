@@ -18,7 +18,9 @@ public final class WebPermissionPolicy {
 
     public WebPermissionPolicy(Set<BridgeCapability> localCapabilities, boolean allowExternalNetwork) {
         Objects.requireNonNull(localCapabilities, "localCapabilities");
-        this.localCapabilities = EnumSet.copyOf(localCapabilities);
+        this.localCapabilities = localCapabilities.isEmpty()
+                ? Set.of()
+                : EnumSet.copyOf(localCapabilities);
         this.allowExternalNetwork = allowExternalNetwork;
     }
 
