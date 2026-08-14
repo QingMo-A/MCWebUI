@@ -1,8 +1,8 @@
 # Direct CEF runtime distribution plan
 
-Status: **PHASE A-B IMPLEMENTED / PHASE C NOT IMPLEMENTED** (2026-08-14).
+Status: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / PRODUCTION SOURCE NOT CONFIGURED** (2026-08-14).
 
-This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory; Phase B adds safe offline package import (staging, validation, atomic publish, repair/rollback) and a Minecraft setup screen. It deliberately does **not** implement a downloader, updater, or production native packaging pipeline yet.
+This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory; Phase B adds safe offline package import (staging, validation, atomic publish, repair/rollback) and a Minecraft setup screen. Phase C now has a tested descriptor/downloader/install foundation, but MCWebUI deliberately ships **no production download descriptor, URL, or official runtime package yet**. Automatic installation is therefore not currently available to players.
 
 ## Phase A implementation checkpoint
 
@@ -25,7 +25,7 @@ An invalid explicit override is authoritative and does not fall through to the s
 
 `scripts/direct-cef-runtime/generate-runtime-manifest.ps1` creates the deterministic Phase A manifest for a prepared runtime directory. It is a consistency tool, not a signer: SHA-256 detects mismatched content but does not establish a trusted publisher. The proof runner assembles a temporary standard layout by default and also has an `Override` mode; both pass through the same validator and loader.
 
-**MANUAL PREINSTALLED DIRECTORY SUPPORTED. OFFLINE RUNTIME PACKAGE IMPORT SUPPORTED. AUTOMATIC DOWNLOAD NOT IMPLEMENTED.**
+**MANUAL PREINSTALLED DIRECTORY SUPPORTED. OFFLINE RUNTIME PACKAGE IMPORT SUPPORTED. DOWNLOAD CORE IMPLEMENTED, BUT AUTOMATIC DOWNLOAD IS NOT CONFIGURED.**
 
 ## Phase B implementation checkpoint
 
@@ -116,8 +116,74 @@ path.
 |---|---|
 | PREINSTALLED DIRECTORY | SUPPORTED |
 | OFFLINE RUNTIME PACKAGE IMPORT | SUPPORTED |
-| AUTOMATIC DOWNLOAD | NOT IMPLEMENTED |
+| AUTOMATIC DOWNLOAD | CORE IMPLEMENTED / PRODUCTION SOURCE NOT CONFIGURED |
 | AUTO UPDATE | NOT IMPLEMENTED |
+
+## Phase C core checkpoint
+
+Phase C introduces a project-owned release descriptor and a pure-Java download
+pipeline without configuring a production source. The descriptor pins its own
+version, artifact ID and revision, the complete Phase A runtime requirement,
+package filename, exact byte size, SHA-256, and optional HTTPS URI. It does not
+trust the package's internal `runtime.json` to select the source or expected
+outer package hash. `runtime.json` remains the Phase A/B payload identity and
+file-integrity boundary; the release descriptor is the MCWebUI release pin.
+
+The first descriptor schema is version 1. `artifactRevision` is part of the
+official distribution identity: rebuilding or changing the native DLL/helper
+or any other runtime payload requires a new artifact revision and newly pinned
+size/hash, even when the CEF and Chromium versions are unchanged. This rule
+avoids silently replacing bytes behind an existing official identity and does
+not change the frozen runtime-manifest schema v1.
+
+`DirectCefRuntimeDownloader` uses JDK `HttpClient`, explicit connection/request
+timeouts, HTTPS-only sources and redirects, exact `Content-Length`/stream size
+bounds, streaming SHA-256, a best-effort disk-space gate, throttled immutable
+progress, and cooperative cancellation. Each attempt owns a fresh
+`<instance>/mcwebui/runtime/.downloads/<artifact>.<uuid>.part`; failure or
+cancellation removes only that file. A verified package is passed to the Phase
+B importer with the descriptor's expected package SHA-256, so extraction,
+locking, validation, repair/rollback, atomic publish, and Phase A rediscovery
+remain one implementation. There is no resume path and no download occurs from
+tick, initialization, or hidden prewarm; the first product flow requires an
+explicit Setup Screen click.
+
+The Setup Screen now treats an invalid explicit `runtimeDir` override as an
+authoritative developer error. It shows the override and typed reason and asks
+the developer to fix or remove the JVM property; installing into the standard
+directory is not offered as a false repair. Without an override, offline import
+remains available. The download action is rendered only when a project-owned
+descriptor is present. This checkpoint intentionally provides none and states
+that automatic download is not configured.
+
+`scripts/direct-cef-runtime/generate-release-descriptor.ps1` accepts a complete
+Phase B ZIP plus an explicit artifact revision, revalidates the archive against
+its `runtime.json`, and emits exact size/hash/identity metadata. The URL is
+optional; omitting it produces unconfigured metadata rather than a fake source.
+This generator is release tooling, not a signer and not permission to publish
+an artifact.
+
+### Phase C core verification (2026-08-14)
+
+- deterministic no-network tests cover descriptor parsing/missing/malformed and
+  unsafe fields; exact success/import/rediscovery; short and oversized bodies;
+  content/hash mismatch; cancellation and owned `.part` cleanup; timeout/HTTP,
+  DNS/connect/TLS/write/disk classifications; HTTPS redirect acceptance and
+  downgrade/file/fragment rejection; and live download/install progress;
+- Setup model/lifecycle tests cover invalid override precedence even beside a
+  valid standard runtime, real offline import followed by Continue availability,
+  normal completion, cancellation, idempotent disposal, executor shutdown,
+  stale UI callback rejection, and an intermediate EXTRACTING snapshot;
+- the real Phase B chain repackaged a 237-file CEF144 runtime, imported it into
+  a fresh standard instance, then reached the bundled page, one Java bridge
+  handshake, and hidden accelerated prewarm in NeoForge with no runtimeDir
+  override;
+- native CEF lifecycle smoke exited 0 with `ready=true`; local frontend
+  typecheck/build plus common, Forge 1.20.1, and NeoForge 1.21.1 tests/builds
+  passed; two built target JARs contained no Direct CEF DLL/EXE/PAK/ZIP payload;
+- production descriptor/source and real Internet download acceptance remain
+  deliberately **NOT CONFIGURED / NOT TESTED**. No release, tag, runtime upload,
+  or fake production URL was created.
 
 ### Phase B verification (2026-08-14)
 
@@ -582,7 +648,7 @@ The runtime package can be large without making every mod JAR large, and one ins
 
 ## Proposed implementation phases
 
-Current phase state: **Phase A-B IMPLEMENTED; Phase C NOT IMPLEMENTED.**
+Current phase state: **Phase A-B IMPLEMENTED; Phase C CORE IMPLEMENTED; PRODUCTION SOURCE NOT CONFIGURED.**
 
 ### Phase A — manifest and discovery
 
@@ -605,11 +671,11 @@ This phase should be completed before relying on automatic downloading so there 
 
 ### Phase C — automatic download
 
-- official source metadata;
-- progress/cancel/retry;
-- staging install;
-- integrity validation;
-- mirrors/source policy if required.
+- project-owned descriptor model and generator: implemented;
+- HTTPS-only streaming download, progress/cancel/retry foundation: implemented;
+- Phase B staging/import and integrity reuse: implemented;
+- official runtime package publication and production URL/size/SHA pin: pending;
+- real production HTTPS acceptance and any mirror/source policy: pending.
 
 ### Phase D — pack/launcher integration
 
@@ -650,5 +716,8 @@ For the current project stage, adopt the following design decision now:
 Phase A is implemented and verified for prepared directories; Phase B is
 implemented and verified for offline package import (safe staging, Phase A
 re-validation, atomic publish with repair/rollback, standard rediscovery, and a
-Minecraft setup screen). Phase C automatic download remains future work and
-must converge on the same validated-directory boundary and the same importer.
+Minecraft setup screen). Phase C's descriptor/downloader/install core now
+converges on that same importer and validated-directory boundary. Production
+automatic download remains unavailable until an official package is published,
+its real HTTPS URL/size/SHA-256 are pinned in MCWebUI, and that exact path passes
+real-network acceptance. Manual offline import remains the supported path today.

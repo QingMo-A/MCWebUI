@@ -107,7 +107,7 @@ Checkpoint date: **2026-08-14**
 
 Historical branch HEAD before this handoff file was added: `2a6fb16f5586e2809c3313d943b01fee8402c3dd` (`clarify neoforge scope checkpoint`). Always re-fetch current `bridge` before acting.
 
-Runtime distribution state: **PHASE A-B IMPLEMENTED / PHASE C NOT IMPLEMENTED** (checkpoints 15-16 below).
+Runtime distribution state: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / PRODUCTION SOURCE NOT CONFIGURED** (checkpoints 15-17 below).
 
 Phase 1 status in the plan: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only bridge/showcase scope)**.
 
@@ -322,7 +322,8 @@ Important review findings at this checkpoint:
     runtime in use). MCEF stays untouched, Forge 1.20.1 keeps building, and no
     runtime binaries enter the mod JAR.
 
-    Distribution status is **PHASE A-B IMPLEMENTED / PHASE C NOT IMPLEMENTED**:
+    Historical checkpoint-16 status was **PHASE A-B IMPLEMENTED / PHASE C NOT
+    IMPLEMENTED**; checkpoint 17 below supersedes only the Phase C core status:
     PREINSTALLED DIRECTORY SUPPORTED, OFFLINE RUNTIME PACKAGE IMPORT SUPPORTED,
     AUTOMATIC DOWNLOAD NOT IMPLEMENTED, AUTO UPDATE NOT IMPLEMENTED.
     Package/file SHA-256 proves integrity and exact artifact identity only, not
@@ -336,6 +337,39 @@ Important review findings at this checkpoint:
     Setup screen acceptance status: **READY FOR USER ACCEPTANCE** — the
     automated in-game import click-through has not been performed by a human
     in this checkpoint.
+
+17. Phase B setup is hardened and Phase C now has a download foundation, but
+    no official runtime release or production source exists yet. An invalid
+    explicit `mcwebui.directCef.runtimeDir` remains authoritative: the native
+    Minecraft setup screen enters a developer-override error state, displays
+    the override and typed reason, and offers only correction-oriented actions.
+    It never claims that downloading or importing into the standard directory
+    repairs that override. Normal missing/corrupt standard-runtime failures
+    retain offline Import, Retry, and Open Runtime Folder. Live progress reads
+    one immutable job snapshot, and screen removal/close shares idempotent,
+    cooperative executor disposal so stale completions cannot mutate a dead
+    screen.
+
+    `DirectCefRuntimeReleaseDescriptor` is project-owned metadata separate from
+    package `runtime.json`. It pins descriptor version, artifact ID/revision,
+    the Phase A runtime requirement, filename, exact size, SHA-256, and optional
+    HTTPS URI. Any native bundle byte change requires a new official artifact
+    revision and newly pinned size/hash even if the CEF version is unchanged;
+    runtime-manifest schema v1 is not silently repurposed.
+    `DirectCefRuntimeDownloader` is pure Java, streams HTTPS into a unique
+    instance-local `.part`, enforces timeouts/redirect policy/size/hash/disk
+    gates, supports cancellation, then calls the existing Phase B importer with
+    the trusted package SHA. It never downloads during tick/init/prewarm.
+
+    The generator can derive exact descriptor identity/size/hash from a valid
+    Phase B ZIP and accepts an optional real HTTPS URL; it does not invent one.
+    This checkpoint ships no configured descriptor and therefore the Setup
+    Screen explicitly says automatic download is not configured while offline
+    import continues to work. Status is **PHASE C CORE IMPLEMENTED /
+    PRODUCTION SOURCE NOT CONFIGURED**, not “automatic download supported”.
+    The next release gate is to publish the official runtime package, pin its
+    real URL/size/SHA-256 in MCWebUI, and pass real HTTPS plus Minecraft Setup
+    Screen acceptance with that exact artifact.
 
 ### Near-term project direction
 
