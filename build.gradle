@@ -113,6 +113,205 @@ tasks.register('architectureCheck') {
         ['frontend/forge', 'frontend/neoforge', 'frontend/forge-playground', 'frontend/neoforge-playground'].each { duplicate ->
             if (file(duplicate).exists()) throw new GradleException("Target-specific frontend bundle found: ${duplicate}")
         }
+
+        // A consumer must prove that the published Developer Preview surface is
+        // sufficient.  It may depend on the public API/resource packages and
+        // loader APIs, but never on target/backend implementation classes.
+        File consumerRoot = file('samples/neoforge-1.21.1-consumer')
+        if (consumerRoot.isDirectory()) {
+            def forbiddenConsumerImports = ~/(?m)^\s*import\s+(dev\.qingmo\.mcwebui\.(?:target|nativecef)(?:\.|;)|org\.cef(?:\.|;)|com\.cinemamod\.mcef(?:\.|;))/
+            fileTree(consumerRoot).matching { include '**/src/**/*.java' }.files.each { source ->
+                String text = source.getText('UTF-8')
+                if (forbiddenConsumerImports.matcher(text).find()) {
+                    throw new GradleException("Forbidden MCWebUI implementation import in consumer sample: ${source}")
+                }
+            }
+            File sampleBuild = new File(consumerRoot, 'build.gradle')
+            if (sampleBuild.isFile()) {
+                String buildText = sampleBuild.getText('UTF-8')
+                if (buildText =~ /project\s*\(\s*['\"]?:targets:|common[\\\/]src[\\\/]main|sourceSets\.main\.output/) {
+                    throw new GradleException('Consumer sample must resolve MCWebUI through the staged binary artifact, not project/sourceSet/classes outputs')
+                }
+            }
+        }
+
+        // Keep the optional MCEF/JCEF surface behind the three deliberate
+        // adapter boundaries.  In particular, public API, backend selection,
+        // Direct CEF, and screen/session orchestration must not accidentally
+        // class-load MCEF implementation types when MCEF is absent.
+        File neoforgeMain = file('targets/neoforge-1.21.1/src/main/java')
+        if (neoforgeMain.isDirectory()) {
+            Set<String> mcefBoundaryFiles = [
+                    'dev/qingmo/mcwebui/target/neoforge1211/NeoForgeMcefBootstrap.java',
+                    'dev/qingmo/mcwebui/target/neoforge1211/NeoForgeMcefBackend.java',
+                    'dev/qingmo/mcwebui/target/neoforge1211/McuiSchemeHandler.java'
+            ] as Set<String>
+            def mcefImport = ~/(?m)^\s*import\s+(?:org\.cef|com\.cinemamod\.mcef)(?:\.|;)/
+            fileTree(neoforgeMain).matching { include '**/*.java' }.files.each { source ->
+                String relative = neoforgeMain.toPath().relativize(source.toPath()).toString().replace('\\', '/')
+                if (mcefImport.matcher(source.getText('UTF-8')).find()
+                        && !mcefBoundaryFiles.contains(relative)) {
+                    throw new GradleException("MCEF/JCEF import escaped its adapter boundary: ${source}")
+                }
+            }
+        }
+    }
+}
+
+def consumerArtifactId = 'mcwebui-neoforge-1.21.1'
+def consumerRepoDirectory = layout.buildDirectory.dir('consumer-repo')
+
+/**
+ * Stages the final NeoForge mod JAR into an isolated Maven repository for the
+ * independent consumer fixture.  This intentionally does not use
+ * publishToMavenLocal and never writes to ~/.m2.
+ */
+tasks.register('stageConsumerMaven') {
+    group = 'verification'
+    description = 'Stage the built NeoForge MCWebUI artifact in an isolated local Maven repository.'
+    dependsOn(':targets:neoforge-1.21.1:jar')
+    outputs.dir(consumerRepoDirectory)
+    // The staging directory is disposable verification output.  Always refresh
+    // it so a changed target JAR cannot be hidden behind stale POM metadata.
+    outputs.upToDateWhen { false }
+    doLast {
+        File repository = consumerRepoDirectory.get().asFile
+        project.delete(repository)
+
+        File artifact = project(':targets:neoforge-1.21.1').tasks.named('jar').get().archiveFile.get().asFile
+        if (!artifact.isFile()) {
+            throw new GradleException("NeoForge MCWebUI artifact was not built: ${artifact}")
+        }
+
+        String groupId = project.group.toString()
+        String versionId = project.version.toString()
+        File versionDirectory = new File(repository,
+                "${groupId.replace('.', '/')}/${consumerArtifactId}/${versionId}")
+        versionDirectory.mkdirs()
+        project.copy {
+            from(artifact)
+            into(versionDirectory)
+            rename { "${consumerArtifactId}-${versionId}.jar" }
+        }
+
+        String pom = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
+         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>${groupId}</groupId>
+  <artifactId>${consumerArtifactId}</artifactId>
+  <version>${versionId}</version>
+  <packaging>jar</packaging>
+  <name>MCWebUI NeoForge 1.21.1 Developer Preview</name>
+  <description>Binary consumer contract for the MCWebUI Developer Preview API.</description>
+  <properties>
+    <mcwebui.api.version>1</mcwebui.api.version>
+  </properties>
+</project>
+"""
+        new File(versionDirectory, "${consumerArtifactId}-${versionId}.pom").setText(pom, 'UTF-8')
+
+        File metadataDirectory = new File(repository, "${groupId.replace('.', '/')}/${consumerArtifactId}")
+        metadataDirectory.mkdirs()
+        String metadata = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<metadata>
+  <groupId>${groupId}</groupId>
+  <artifactId>${consumerArtifactId}</artifactId>
+  <versioning>
+    <latest>${versionId}</latest>
+    <release>${versionId}</release>
+    <versions><version>${versionId}</version></versions>
+  </versioning>
+</metadata>
+"""
+        new File(metadataDirectory, 'maven-metadata.xml').setText(metadata, 'UTF-8')
+
+        // Binary/API and packaging boundary checks run before the independent
+        // Gradle process is launched.
+        java.util.zip.ZipFile zip = new java.util.zip.ZipFile(artifact)
+        try {
+            Set<String> entries = zip.entries().collect { it.name } as Set<String>
+            ['dev/qingmo/mcwebui/api/MCWebUIApi.class',
+             'dev/qingmo/mcwebui/api/WebAppDefinition.class',
+             'dev/qingmo/mcwebui/api/neoforge/MCWebUIClient.class',
+             'dev/qingmo/mcwebui/api/neoforge/MCWebUIBackendStatus.class',
+             'dev/qingmo/mcwebui/resource/WebResourceProvider.class',
+             'dev/qingmo/mcwebui/bridge/WebBridge.class'].each { required ->
+                if (!entries.contains(required)) {
+                    throw new GradleException("Staged MCWebUI artifact is missing public API entry: ${required}")
+                }
+            }
+            def forbidden = entries.findAll { String name ->
+                name.startsWith('org/cef/') || name.startsWith('com/cinemamod/mcef/')
+                        || name.toLowerCase(Locale.ROOT).endsWith('.dll')
+                        || name.toLowerCase(Locale.ROOT).endsWith('.exe')
+                        || name.toLowerCase(Locale.ROOT).endsWith('.pak')
+                        || name.toLowerCase(Locale.ROOT).endsWith('.zip')
+            }
+            if (!forbidden.isEmpty()) {
+                throw new GradleException("MCWebUI mod artifact embeds forbidden runtime/native files: ${forbidden}")
+            }
+            def modMetadataEntry = zip.getEntry('META-INF/neoforge.mods.toml')
+            if (modMetadataEntry == null) {
+                throw new GradleException('Staged MCWebUI artifact is missing NeoForge mod metadata')
+            }
+            String modMetadata = zip.getInputStream(modMetadataEntry).getText('UTF-8')
+            if (!(modMetadata =~ /(?s)\[\[dependencies\.mcwebui\]\]\s*modId="mcef"\s*type="optional"/)) {
+                throw new GradleException('Staged MCWebUI metadata must keep MCEF as an optional dependency')
+            }
+        } finally {
+            zip.close()
+        }
+        logger.lifecycle("Staged ${groupId}:${consumerArtifactId}:${versionId} at ${versionDirectory}")
+    }
+}
+
+tasks.register('verifyConsumerSample') {
+    group = 'verification'
+    description = 'Build the standalone NeoForge consumer against only the staged MCWebUI binary artifact.'
+    dependsOn('stageConsumerMaven', 'architectureCheck')
+    doLast {
+        File sample = file('samples/neoforge-1.21.1-consumer')
+        if (!sample.isDirectory() || !new File(sample, 'build.gradle').isFile()) {
+            throw new GradleException("Missing standalone consumer fixture: ${sample}")
+        }
+        File wrapper = file('gradlew.bat')
+        if (!wrapper.isFile()) wrapper = file('gradlew')
+        if (!wrapper.isFile()) throw new GradleException('Gradle wrapper is required for the standalone consumer proof')
+        String stagedRepo = consumerRepoDirectory.get().asFile.absolutePath
+        if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            exec {
+                workingDir(sample)
+                // cmd.exe needs the wrapper and staged repository quoted as one
+                // command because this workspace path contains a space.
+                String nestedCommand = "\"${wrapper.absolutePath}\" --no-daemon " +
+                        "-PmcwebuiConsumerRepo=\"${stagedRepo}\" clean build"
+                commandLine 'cmd', '/d', '/c', nestedCommand
+            }
+        } else {
+            exec {
+                workingDir(sample)
+                commandLine wrapper.absolutePath, '--no-daemon',
+                        '-PmcwebuiConsumerRepo=' + stagedRepo, 'clean', 'build'
+            }
+        }
+        File consumerJar = fileTree(new File(sample, 'build/libs')).matching { include '*.jar' }.files.find { !it.name.endsWith('-sources.jar') }
+        if (consumerJar == null || !consumerJar.isFile()) {
+            throw new GradleException('Standalone consumer build did not produce a JAR')
+        }
+        java.util.zip.ZipFile zip = new java.util.zip.ZipFile(consumerJar)
+        try {
+            Set<String> entries = zip.entries().collect { it.name } as Set<String>
+            if (!entries.any { it.endsWith('ConsumerSampleMod.class') }) {
+                throw new GradleException("Standalone consumer JAR is missing its mod class: ${consumerJar}")
+            }
+            if (entries.any { String name -> name.startsWith('dev/qingmo/mcwebui/') }) {
+                throw new GradleException("Standalone consumer JAR shaded MCWebUI classes instead of using the mod dependency: ${consumerJar}")
+            }
+        } finally {
+            zip.close()
+        }
+        logger.lifecycle("Standalone consumer binary proof passed: ${consumerJar}")
     }
 }
 

@@ -1,0 +1,45 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #101827;
+  color: #e9efff;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.panel {
+  width: min(34rem, calc(100vw - 3rem));
+  padding: 2rem;
+  border: 1px solid #334260;
+  border-radius: 1rem;
+  background: #192238;
+  box-shadow: 0 1rem 3rem #080d18aa;
+}
+
+.eyebrow {
+  color: #6fe4b2;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+button {
+  padding: .65rem 1rem;
+  border: 0;
+  border-radius: .5rem;
+  background: #6fe4b2;
+  color: #102016;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+output {
+  display: block;
+  margin-top: 1rem;
+  color: #a9b9db;
+}
