@@ -1,8 +1,8 @@
 # Direct CEF runtime distribution plan
 
-Status: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / PRODUCTION SOURCE NOT CONFIGURED** (2026-08-14).
+Status: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / RELEASE PIPELINE READY / PRODUCTION SOURCE NOT CONFIGURED** (2026-08-14).
 
-This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory; Phase B adds safe offline package import (staging, validation, atomic publish, repair/rollback) and a Minecraft setup screen. Phase C now has a tested descriptor/downloader/install foundation, but MCWebUI deliberately ships **no production download descriptor, URL, or official runtime package yet**. Automatic installation is therefore not currently available to players.
+This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory; Phase B adds safe offline package import (staging, validation, atomic publish, repair/rollback) and a Minecraft setup screen. Phase C has a tested descriptor/downloader/install foundation and release preparation/embedding path, but MCWebUI deliberately ships **no production download descriptor, URL, or official runtime package yet**. Automatic installation is therefore not currently available to players.
 
 ## Phase A implementation checkpoint
 
@@ -124,7 +124,8 @@ path.
 Phase C introduces a project-owned release descriptor and a pure-Java download
 pipeline without configuring a production source. The descriptor pins its own
 version, artifact ID and revision, the complete Phase A runtime requirement,
-package filename, exact byte size, SHA-256, and optional HTTPS URI. It does not
+package filename, exact byte size, optional unpacked payload size, SHA-256, and
+optional HTTPS URI. It does not
 trust the package's internal `runtime.json` to select the source or expected
 outer package hash. `runtime.json` remains the Phase A/B payload identity and
 file-integrity boundary; the release descriptor is the MCWebUI release pin.
@@ -138,7 +139,8 @@ not change the frozen runtime-manifest schema v1.
 
 `DirectCefRuntimeDownloader` uses JDK `HttpClient`, explicit connection/request
 timeouts, HTTPS-only sources and redirects, exact `Content-Length`/stream size
-bounds, streaming SHA-256, a best-effort disk-space gate, throttled immutable
+bounds, streaming SHA-256, a best-effort fresh-install disk-space gate for the
+downloaded ZIP + unpacked staging + 16 MiB margin, throttled immutable
 progress, and cooperative cancellation. Each attempt owns a fresh
 `<instance>/mcwebui/runtime/.downloads/<artifact>.<uuid>.part`; failure or
 cancellation removes only that file. A verified package is passed to the Phase
@@ -152,9 +154,13 @@ The Setup Screen now treats an invalid explicit `runtimeDir` override as an
 authoritative developer error. It shows the override and typed reason and asks
 the developer to fix or remove the JVM property; installing into the standard
 directory is not offered as a false repair. Without an override, offline import
-remains available. The download action is rendered only when a project-owned
-descriptor is present. This checkpoint intentionally provides none and states
-that automatic download is not configured.
+remains available. The default constructor now obtains its project-owned pin
+from `DirectCefRuntimeReleaseCatalog` at
+`META-INF/mcwebui/direct-cef-runtime-release.json`. A missing resource is the
+supported development/unconfigured state. A present malformed, wrong-runtime,
+or unsafe descriptor is logged as a BUILD/RELEASE CONFIG ERROR; automatic
+download stays unavailable and offline import remains available. This
+checkpoint intentionally bundles no descriptor.
 
 `scripts/direct-cef-runtime/generate-release-descriptor.ps1` accepts a complete
 Phase B ZIP plus an explicit artifact revision, revalidates the archive against
@@ -163,7 +169,52 @@ optional; omitting it produces unconfigured metadata rather than a fake source.
 This generator is release tooling, not a signer and not permission to publish
 an artifact.
 
+### Release pipeline checkpoint
+
+`scripts/direct-cef-runtime/prepare-runtime-release.ps1` composes the existing
+manifest, deterministic package, and descriptor generators into one external
+release-staging gate. It produces the runtime ZIP, an unconfigured descriptor
+candidate, `checksums.txt`, and `release-report.json`. The report records the
+runtime/CEF/Chromium identity, four entrypoints, artifact revision, compressed
+and unpacked sizes, SHA-256, file count, and source Git SHA. Its report-only UTC
+timestamp never enters the deterministic ZIP.
+
+The NeoForge-only Gradle property
+`-PmcwebuiDirectCefReleaseDescriptor=<absolute-path>` validates a final
+configured descriptor with the production Java parser/requirement checks and
+then embeds it at the catalog resource path. Without the property, ordinary
+development and `buildAllTargets` builds succeed and contain no descriptor.
+Invalid descriptors fail the build; Forge is not forced to carry Direct
+backend release metadata.
+
+`scripts/direct-cef-runtime/test-first-run-install.ps1` has two explicit modes.
+`LOCAL_FIXTURE` injects the locally prepared ZIP as a downloader source without
+inventing or persisting a production URL, then requires package verification,
+Phase B import, Phase A standard discovery, bundled page, Bridge handshake, and
+hidden prewarm. `REAL_RELEASE` requires an actual configured HTTPS descriptor;
+without one it reports `NOT CONFIGURED`, never PASS. Release ordering and the
+Developer Preview gate are frozen in `plans/direct-cef-release-checklist.md`.
+
 ### Phase C core verification (2026-08-14)
+
+- release catalog tests cover absent, valid, explicitly unconfigured,
+  malformed, wrong-runtime, invalid URL/size/SHA/schema, and strict build-time
+  configured-source validation;
+- descriptor embedding gates were exercised with no property (resource
+  absent), a valid absolute descriptor (fixed resource packaged), and an
+  invalid descriptor (build fails before packaging);
+- a real 239-file CEF 144 staging run produced a 162,295,855-byte deterministic
+  ZIP with SHA-256
+  `C7555732A7B85DE2C079F7320184E455350DBD9986DCE8C1566B26D9854D7AD4` and
+  379,049,577 unpacked payload bytes; its candidate and report state
+  `UNCONFIGURED`, and no binary/staging output is committed;
+- the LOCAL_FIXTURE downloader/import/discovery gate passed in a fresh
+  standard instance, followed by a real NeoForge bundled-page start, one
+  Bridge handshake, and hidden accelerated prewarm. The visible first draw
+  remains a separate user action and was not claimed by this headless gate;
+- `REAL_RELEASE` reports `NOT CONFIGURED` because no official runtime asset or
+  production URL exists. No tag, GitHub Release, upload, or mod publication was
+  performed;
 
 - deterministic no-network tests cover descriptor parsing/missing/malformed and
   unsafe fields; exact success/import/rediscovery; short and oversized bodies;
@@ -648,7 +699,7 @@ The runtime package can be large without making every mod JAR large, and one ins
 
 ## Proposed implementation phases
 
-Current phase state: **Phase A-B IMPLEMENTED; Phase C CORE IMPLEMENTED; PRODUCTION SOURCE NOT CONFIGURED.**
+Current phase state: **Phase A-B IMPLEMENTED; Phase C CORE IMPLEMENTED; RELEASE PIPELINE READY; PRODUCTION SOURCE NOT CONFIGURED.**
 
 ### Phase A — manifest and discovery
 
@@ -672,6 +723,9 @@ This phase should be completed before relying on automatic downloading so there 
 ### Phase C — automatic download
 
 - project-owned descriptor model and generator: implemented;
+- JAR-owned catalog and NeoForge descriptor embedding gate: implemented;
+- deterministic release preparation/report/checksum pipeline: implemented;
+- LOCAL_FIXTURE fresh-instance download/install acceptance: implemented and passed;
 - HTTPS-only streaming download, progress/cancel/retry foundation: implemented;
 - Phase B staging/import and integrity reuse: implemented;
 - official runtime package publication and production URL/size/SHA pin: pending;
@@ -716,8 +770,9 @@ For the current project stage, adopt the following design decision now:
 Phase A is implemented and verified for prepared directories; Phase B is
 implemented and verified for offline package import (safe staging, Phase A
 re-validation, atomic publish with repair/rollback, standard rediscovery, and a
-Minecraft setup screen). Phase C's descriptor/downloader/install core now
-converges on that same importer and validated-directory boundary. Production
+Minecraft setup screen). Phase C's descriptor/downloader/install core, JAR
+catalog, release preparation pipeline, and LOCAL_FIXTURE first-run gate now
+converge on that same importer and validated-directory boundary. Production
 automatic download remains unavailable until an official package is published,
 its real HTTPS URL/size/SHA-256 are pinned in MCWebUI, and that exact path passes
 real-network acceptance. Manual offline import remains the supported path today.

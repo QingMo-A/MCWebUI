@@ -107,7 +107,7 @@ Checkpoint date: **2026-08-14**
 
 Historical branch HEAD before this handoff file was added: `2a6fb16f5586e2809c3313d943b01fee8402c3dd` (`clarify neoforge scope checkpoint`). Always re-fetch current `bridge` before acting.
 
-Runtime distribution state: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / PRODUCTION SOURCE NOT CONFIGURED** (checkpoints 15-17 below).
+Runtime distribution state: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / RELEASE PIPELINE READY / PRODUCTION SOURCE NOT CONFIGURED** (checkpoints 15-18 below).
 
 Phase 1 status in the plan: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only bridge/showcase scope)**.
 
@@ -370,6 +370,45 @@ Important review findings at this checkpoint:
     The next release gate is to publish the official runtime package, pin its
     real URL/size/SHA-256 in MCWebUI, and pass real HTTPS plus Minecraft Setup
     Screen acceptance with that exact artifact.
+
+18. The Direct CEF production release pipeline is now prepared, but no release
+    was created. `DirectCefRuntimeReleaseCatalog` is the local project-owned
+    trust anchor at
+    `META-INF/mcwebui/direct-cef-runtime-release.json`; it never fetches remote
+    metadata. Resource absence means production source unconfigured. A present
+    malformed/wrong-runtime/invalid source is a logged BUILD/RELEASE CONFIG
+    ERROR, while the Setup Screen preserves offline import. The default Setup
+    constructor uses this catalog instead of hard-coding a null descriptor.
+
+    NeoForge accepts the explicit Gradle property
+    `mcwebuiDirectCefReleaseDescriptor=<absolute path>`. The build validates the
+    descriptor with the production Java parser/requirement gate before staging
+    it at the fixed catalog path. No property keeps normal development builds
+    descriptor-free; invalid input fails the build. Forge is unchanged. The
+    descriptor schema v1 now has a backward-compatible optional
+    `runtimePayloadSize`; new release candidates always emit it. Fresh-install
+    advisory disk budgeting is ZIP + unpacked payload + 16 MiB, with the Phase
+    B bounded writes remaining authoritative.
+
+    `prepare-runtime-release.ps1` composes manifest validation, deterministic
+    packaging, descriptor generation, checksums, and a source-traceable release
+    report in an external directory. A real 239-file staging run produced a
+    162,295,855-byte ZIP, 379,049,577 unpacked payload bytes, and SHA-256
+    `C7555732A7B85DE2C079F7320184E455350DBD9986DCE8C1566B26D9854D7AD4`;
+    repeated packaging was byte-identical. Its descriptor intentionally has no
+    URL. No ZIP/runtime binaries were committed.
+
+    `test-first-run-install.ps1` distinguishes `LOCAL_FIXTURE` from
+    `REAL_RELEASE`. LOCAL_FIXTURE injects the local ZIP into the downloader,
+    then passed package verification, Phase B import, Phase A standard
+    discovery, real NeoForge bundled page, one Bridge handshake, and hidden
+    prewarm. REAL_RELEASE is **NOT CONFIGURED**, not PASS. Setup Screen visual
+    acceptance remains **READY FOR USER ACCEPTANCE**. Release ordering and the
+    `DIRECT CEF DEVELOPER PREVIEW READY` prerequisites are documented in
+    `plans/direct-cef-release-checklist.md`. Current status is **RELEASE
+    PIPELINE READY / WAITING FOR OFFICIAL ASSET**; creating a tag/Release,
+    uploading the ZIP, embedding the final descriptor, REAL_RELEASE acceptance,
+    and publication all still require explicit user authorization.
 
 ### Near-term project direction
 
