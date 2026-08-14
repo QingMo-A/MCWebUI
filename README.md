@@ -59,6 +59,16 @@ Automated Minecraft fullscreen/context-recreation regression, broad hardware
 coverage, and production native distribution remain pending, so MCEF stays the
 default backend and Direct CEF must be enabled explicitly.
 
+Direct CEF runtime distribution (see
+[`plans/direct-cef-distribution-plan.md`](plans/direct-cef-distribution-plan.md))
+supports **preinstalled directories** and **offline runtime package import**:
+`scripts/direct-cef-runtime/package-runtime.ps1` builds a deterministic
+`mcwebui-direct-cef-runtime-<runtime-id>-<platform>-<arch>.zip`, and when the
+runtime is missing the Direct CEF F8 flow opens a Minecraft setup screen where
+the player pastes the package path to import it. No network access is required.
+Automatic download/update remain NOT IMPLEMENTED, and the mod JAR never embeds
+the CEF runtime.
+
 ## Requirements
 
 - JDK 17 for `common` and the preserved Forge target; JDK 21 for the NeoForge target.

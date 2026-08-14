@@ -107,6 +107,8 @@ Checkpoint date: **2026-08-14**
 
 Historical branch HEAD before this handoff file was added: `2a6fb16f5586e2809c3313d943b01fee8402c3dd` (`clarify neoforge scope checkpoint`). Always re-fetch current `bridge` before acting.
 
+Runtime distribution state: **PHASE A-B IMPLEMENTED / PHASE C NOT IMPLEMENTED** (checkpoints 15-16 below).
+
 Phase 1 status in the plan: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only bridge/showcase scope)**.
 
 What currently exists:
@@ -291,6 +293,49 @@ Important review findings at this checkpoint:
     Offline ZIP import, extraction/staging/atomic publication, download,
     updater, cleanup and release signing remain future work; do not describe
     them as available.
+
+16. Direct CEF runtime distribution Phase B implements offline package import
+    and a Minecraft setup screen. The frozen package format v1 is a ZIP with
+    `runtime.json` at its root whose payload exactly matches the manifest
+    `files[]` set. `DirectCefRuntimePackageImporter` reads the manifest first,
+    reuses the Phase A identity/manifest gates, validates every entry path and
+    exact entry set (no extras, no case duplicates, no zip bombs), extracts
+    with per-file size caps and one-pass SHA-256 into a sibling staging
+    directory, re-validates with the Phase A validator, publishes with
+    `ATOMIC_MOVE` (same-filesystem fallback), and re-discovers through the
+    standard path. A process-shared `FileChannel`/`FileLock` in
+    `mcwebui/runtime/.locks/` serializes installers (`INSTALL_IN_PROGRESS`
+    after a bounded wait); a valid existing runtime yields
+    `ALREADY_INSTALLED`; a corrupt one is quarantined
+    (`windows-x86_64.invalid-<uuid>`) and replaced with rollback; a runtime
+    loaded by the current JVM returns `RUNTIME_IN_USE`. Cancellation cleans
+    only its own staging.
+
+    The F8 flow now opens `DirectCefRuntimeSetupScreen` (a plain Minecraft
+    Screen, never the Web UI) when standard discovery fails for
+    `browserBackend=direct-cef`: it shows the required CEF/Chromium identity,
+    typed player-facing failure messages, the expected directory, a package
+    path field and Import/Retry/Open Runtime Folder/Cancel. Import runs on a
+    worker thread with immutable progress snapshots and returns to the client
+    thread; success re-runs discovery and offers Continue. Import is disabled
+    for reasons a package cannot fix (wrong platform/arch, ABI/schema,
+    runtime in use). MCEF stays untouched, Forge 1.20.1 keeps building, and no
+    runtime binaries enter the mod JAR.
+
+    Distribution status is **PHASE A-B IMPLEMENTED / PHASE C NOT IMPLEMENTED**:
+    PREINSTALLED DIRECTORY SUPPORTED, OFFLINE RUNTIME PACKAGE IMPORT SUPPORTED,
+    AUTOMATIC DOWNLOAD NOT IMPLEMENTED, AUTO UPDATE NOT IMPLEMENTED.
+    Package/file SHA-256 proves integrity and exact artifact identity only, not
+    publisher authenticity; the Phase C trust model (HTTPS metadata, release
+    signing, signed manifest) is still to be decided. Evidence lives in
+    `scripts/direct-cef-runtime/test-runtime-import.ps1` (package → fresh
+    instance import → standard rediscovery → real NeoForge Direct startup with
+    bundled page, bridge handshake and hidden prewarm, with no
+    `mcwebui.directCef.runtimeDir` override) and
+    `scripts/direct-cef-runtime/package-runtime.ps1` (deterministic packaging).
+    Setup screen acceptance status: **READY FOR USER ACCEPTANCE** — the
+    automated in-game import click-through has not been performed by a human
+    in this checkpoint.
 
 ### Near-term project direction
 

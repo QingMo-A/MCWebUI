@@ -1,8 +1,8 @@
 # Direct CEF runtime distribution plan
 
-Status: **PHASE A IMPLEMENTED / PHASE B-C NOT IMPLEMENTED** (2026-08-14).
+Status: **PHASE A-B IMPLEMENTED / PHASE C NOT IMPLEMENTED** (2026-08-14).
 
-This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A now implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory. It deliberately does **not** implement a downloader, ZIP importer, installer, updater, or production native packaging pipeline yet.
+This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory; Phase B adds safe offline package import (staging, validation, atomic publish, repair/rollback) and a Minecraft setup screen. It deliberately does **not** implement a downloader, updater, or production native packaging pipeline yet.
 
 ## Phase A implementation checkpoint
 
@@ -25,7 +25,125 @@ An invalid explicit override is authoritative and does not fall through to the s
 
 `scripts/direct-cef-runtime/generate-runtime-manifest.ps1` creates the deterministic Phase A manifest for a prepared runtime directory. It is a consistency tool, not a signer: SHA-256 detects mismatched content but does not establish a trusted publisher. The proof runner assembles a temporary standard layout by default and also has an `Override` mode; both pass through the same validator and loader.
 
-**MANUAL PREINSTALLED DIRECTORY SUPPORTED. OFFLINE ZIP IMPORT AND AUTOMATIC DOWNLOAD ARE NOT IMPLEMENTED.**
+**MANUAL PREINSTALLED DIRECTORY SUPPORTED. OFFLINE RUNTIME PACKAGE IMPORT SUPPORTED. AUTOMATIC DOWNLOAD NOT IMPLEMENTED.**
+
+## Phase B implementation checkpoint
+
+Phase B implements offline runtime package import with the same validation boundary as Phase A; it never writes a second validation dialect.
+
+### Package format v1 (frozen)
+
+```text
+mcwebui-direct-cef-runtime-<runtime-id>-<platform>-<arch>.zip
+└─ runtime.json                      (must be at the ZIP root, exactly one)
+   mcwebui-direct-cef.dll
+   mcwebui-cef-helper.exe
+   libcef.dll
+   chrome_elf.dll
+   ...
+   locales/...
+```
+
+The ZIP payload must be exactly `runtime.json` + the complete `files[]` set from
+that manifest, plus only safe directory entries that are ancestors of listed
+files. No top-level wrapper folder, no extra files, no symlinks. The package
+filename is never trusted; identity comes from comparing the packaged
+`runtime.json` (schema, runtimeId, ABI, CEF/Chromium version, platform, arch)
+against the project-owned requirement before any large extraction happens.
+
+### Importer (`DirectCefRuntimePackageImporter`)
+
+- reads the ZIP with `java.util.zip.ZipFile` and parses `runtime.json` first
+  (bounded to 16 MiB), then reuses the Phase A identity and manifest gates;
+- validates every entry path (`/`-relative only: rejects absolute paths,
+  drive qualifiers, UNC/backslash forms, `.`, `..`, empty components, NUL) and
+  rejects case-insensitive duplicates including a second `runtime.json`;
+- requires the entry set to match the manifest exactly: no missing files, no
+  extra files, no empty directory entries;
+- enforces declared-size equality plus a hard streaming write bound per file
+  (manifest size; stream over/under-run fails) and absolute per-file (1 GiB)
+  and total (4 GiB) uncompressed bounds — `ZipEntry.getSize()` alone is never
+  the only safety boundary;
+- extracts with buffer streaming while computing SHA-256 in the same pass, then
+  checks actual size and hash against the manifest;
+- never restores symlinks/links/reparse metadata — only plain files and
+  directories are created;
+- stages as a sibling of the final directory (`windows-x86_64.installing-<uuid>`),
+  never inside `TEMP` across volumes, never into the final path;
+- calls the Phase A validator on the staging tree, publishes, validates the
+  published tree again, then re-runs `DirectCefRuntimeDiscovery` from the
+  standard directory. The importer only installs; it never creates a browser.
+- supports an optional whole-package SHA-256: when supplied it is verified
+  first; without it the internal manifest/file hashes still prove consistency.
+  Neither form establishes publisher authenticity (Phase C trust model).
+
+### Concurrency and safety
+
+- process-shared lock via `FileChannel`/`FileLock` in the stable
+  `mcwebui/runtime/.locks/` directory (never inside a final runtime), keyed by
+  runtime identity + platform + arch; `OverlappingFileLockException` and
+  Windows cross-process lock failures are treated as busy with a bounded wait,
+  then `INSTALL_IN_PROGRESS`;
+- under the lock the standard runtime is re-discovered: a valid one returns
+  `ALREADY_INSTALLED` without touching anything;
+- a corrupt existing runtime is quarantined
+  (`windows-x86_64.invalid-<uuid>`) only after the lock is held and the target
+  is not loaded by this process (`RUNTIME_IN_USE` otherwise), then replaced;
+- publish prefers `Files.move(..., ATOMIC_MOVE)` with a same-filesystem normal
+  move fallback; `REPLACE_EXISTING` is never used; a failed publish rolls the
+  quarantined runtime back and the error names staging/quarantine/final paths;
+- cooperative cancellation is checked at file boundaries and inside large
+  streams; cancellation removes only this run's staging and never a final
+  runtime.
+
+### Setup screen (`DirectCefRuntimeSetupScreen`)
+
+Only `browserBackend=direct-cef` with failed discovery opens it. It is a plain
+Minecraft Screen (never the Web UI, avoiding a CEF-missing bootstrap cycle):
+shows the required identity, a typed player-facing status message, the expected
+directory, a package path field, and Import/Retry/Open Runtime Folder/Cancel
+buttons. Import runs on a worker thread publishing immutable progress snapshots
+(VALIDATING_PACKAGE, WAITING_FOR_LOCK, EXTRACTING, VALIDATING_RUNTIME,
+PUBLISHING, COMPLETE, FAILED, CANCELLED); completion returns to the client
+thread, re-runs discovery, and offers Continue. Import is disabled for reasons
+a package cannot fix (wrong platform/arch, ABI/schema mismatch, runtime in use).
+No AWT/Swing file picker is introduced; the first version accepts a pasted ZIP
+path.
+
+### Support level (after Phase B)
+
+| Path | Status |
+|---|---|
+| PREINSTALLED DIRECTORY | SUPPORTED |
+| OFFLINE RUNTIME PACKAGE IMPORT | SUPPORTED |
+| AUTOMATIC DOWNLOAD | NOT IMPLEMENTED |
+| AUTO UPDATE | NOT IMPLEMENTED |
+
+### Phase B verification (2026-08-14)
+
+- unit matrix covers: valid install + standard rediscovery, ALREADY_INSTALLED,
+  missing/duplicate `runtime.json`, wrong schema/runtimeId/ABI/platform/arch,
+  missing manifest file, extra entry, unnecessary directory entry, unsafe
+  paths (`../`, absolute, backslash, drive-qualified, `//`, `./`), case
+  duplicates, declared-size mismatch, truncated entry/file, content hash
+  mismatch, zip-bomb size bounds, optional package hash, cancellation,
+  mid-extraction failure, lock contention, concurrent imports, corrupt-runtime
+  repair, publish-failure rollback, loaded-runtime protection, deterministic
+  packaging, and setup message coverage;
+- the deterministic package builder repackages the same tree byte-identically
+  (fixed timestamps, sorted entries, fixed separators; byte-identity holds on
+  the same .NET runtime, content/order always);
+- the real proof (`scripts/direct-cef-runtime/test-runtime-import.ps1`)
+  packages the prepared 239-file runtime, imports it into a fresh instance via
+  the Java importer, then starts a real NeoForge Direct client from the
+  standard directory with **no** `mcwebui.directCef.runtimeDir` override:
+  bundled page + bridge handshake + hidden prewarm must pass.
+
+**Integrity vs authenticity:** file SHA-256 and an optional package SHA-256
+prove exact artifact identity and content consistency only. A package hash that
+comes from the package itself cannot prove publisher authenticity; Phase C must
+define a trusted HTTPS metadata / release signing / signed manifest model.
+Never describe "SHA-256 means the package is trusted".
 
 ### Phase A verification (2026-08-14)
 
@@ -464,7 +582,7 @@ The runtime package can be large without making every mod JAR large, and one ins
 
 ## Proposed implementation phases
 
-Current phase state: **Phase A IMPLEMENTED; Phase B/C NOT IMPLEMENTED.**
+Current phase state: **Phase A-B IMPLEMENTED; Phase C NOT IMPLEMENTED.**
 
 ### Phase A — manifest and discovery
 
@@ -529,4 +647,8 @@ For the current project stage, adopt the following design decision now:
 
 > Direct CEF will use an external, shared, versioned MCWebUI runtime. Automatic first-use installation will be the preferred player experience, but manual/offline package import and preinstalled runtime discovery are mandatory supported workflows. Automatic downloading is not a hard runtime dependency.
 
-Phase A is implemented and verified for prepared directories. Phase B remains the next distribution step: safely import an official offline runtime package through staging and atomic publication. Phase C automatic download remains future work and must converge on the same validated-directory boundary.
+Phase A is implemented and verified for prepared directories; Phase B is
+implemented and verified for offline package import (safe staging, Phase A
+re-validation, atomic publish with repair/rollback, standard rediscovery, and a
+Minecraft setup screen). Phase C automatic download remains future work and
+must converge on the same validated-directory boundary and the same importer.
