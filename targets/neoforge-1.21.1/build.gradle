@@ -83,16 +83,20 @@ if (directCef.get()) {
     tasks.withType(JavaExec).configureEach {
         def directUrl = providers.gradleProperty('mcwebuiDirectCefUrl').orElse('').get()
         def directRuntime = providers.gradleProperty('mcwebuiDirectCefRuntimeDir').orElse('').get()
-        def directHelper = providers.gradleProperty('mcwebuiDirectCefHelper').orElse('').get()
-        def directNative = providers.gradleProperty('mcwebuiDirectCefNative').orElse('').get()
+        def directInstanceRoot = providers.gradleProperty('mcwebuiDirectCefInstanceRoot').orElse('').get()
         def directCache = providers.gradleProperty('mcwebuiDirectCefCacheDir').orElse('').get()
         def directTargetHz = providers.gradleProperty('mcwebuiDirectCefTargetHz').orElse('60').get()
         jvmArgs "-Dmcwebui.browserBackend=direct-cef",
-                "-Dmcwebui.directCef.runtimeDir=${directRuntime}",
-                "-Dmcwebui.directCef.helper=${directHelper}",
-                "-Dmcwebui.directCef.native=${directNative}",
-                "-Dmcwebui.directCef.cacheDir=${directCache}",
                 "-Dmcwebui.directCef.targetHz=${directTargetHz}"
+        if (!directInstanceRoot.isBlank()) {
+            jvmArgs "-Dmcwebui.directCef.instanceRoot=${directInstanceRoot}"
+        }
+        if (!directRuntime.isBlank()) {
+            jvmArgs "-Dmcwebui.directCef.runtimeDir=${directRuntime}"
+        }
+        if (!directCache.isBlank()) {
+            jvmArgs "-Dmcwebui.directCef.cacheDir=${directCache}"
+        }
         if (!directUrl.isBlank()) {
             // Explicit loopback URLs remain available for isolated transport tests.
             // Normal Direct runs omit this property and serve the bundled page from
@@ -130,10 +134,10 @@ tasks.withType(Test).configureEach {
                 providers.gradleProperty('mcwebuiDirectCefUrl').orElse('').get()
         systemProperty 'mcwebui.directCef.integration.cacheDir',
                 providers.gradleProperty('mcwebuiDirectCefCacheDir').orElse('').get()
-        systemProperty 'mcwebui.directCef.integration.helper',
-                providers.gradleProperty('mcwebuiDirectCefHelper').orElse('').get()
-        systemProperty 'mcwebui.directCef.native',
-                providers.gradleProperty('mcwebuiDirectCefNative').orElse('').get()
+        systemProperty 'mcwebui.directCef.integration.runtimeDir',
+                providers.gradleProperty('mcwebuiDirectCefRuntimeDir').orElse('').get()
+        systemProperty 'mcwebui.directCef.integration.instanceRoot',
+                providers.gradleProperty('mcwebuiDirectCefInstanceRoot').orElse('').get()
         systemProperty 'mcwebui.directCef.integration.resources',
                 layout.buildDirectory.dir('resources/main').get().asFile.absolutePath
     }

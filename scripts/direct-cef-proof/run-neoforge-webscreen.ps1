@@ -2,8 +2,10 @@
 param(
     [string]$CefRoot = '',
     [string]$BuildRoot = (Join-Path $env:TEMP 'mcwebui-direct-cef-runtime-build'),
-    [string]$RuntimeRoot = (Join-Path $env:TEMP 'mcwebui-direct-cef-runtime'),
-    [string]$CacheRoot = (Join-Path $env:TEMP 'mcwebui-direct-cef-cache'),
+    [string]$RuntimeRoot = (Join-Path $env:TEMP ('mcwebui-direct-cef-instance-' + [guid]::NewGuid().ToString('N'))),
+    [string]$CacheRoot = '',
+    [ValidateSet('Standard', 'Override')]
+    [string]$RuntimeSource = 'Standard',
     [int]$DurationMs = 90000,
     [int]$StartupTimeoutMs = 120000,
     [int]$Port = 18765,
@@ -38,12 +40,39 @@ if (-not $SkipBuild) {
 }
 
 $bin = (Resolve-Path (Join-Path $BuildRoot 'bin')).Path
-$native = Join-Path $bin 'mcwebui-direct-cef.dll'
-$helper = Join-Path $bin 'mcwebui-cef-helper.exe'
-foreach ($required in @($native, $helper, (Join-Path $bin 'libcef.dll'))) {
+$runtimeId = 'cef-144.0.33-cb4715c'
+$runtimePlatform = 'windows-x86_64'
+$instanceRoot = [System.IO.Path]::GetFullPath($RuntimeRoot)
+$preparedRuntime = if ($RuntimeSource -eq 'Standard') {
+    Join-Path $instanceRoot "mcwebui\runtime\cef\$runtimeId\$runtimePlatform"
+} else {
+    Join-Path $instanceRoot "mcwebui\runtime-overrides\$runtimeId\$runtimePlatform"
+}
+foreach ($required in @((Join-Path $bin 'mcwebui-direct-cef.dll'), (Join-Path $bin 'mcwebui-cef-helper.exe'), (Join-Path $bin 'libcef.dll'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Direct CEF runtime artifact missing: $required" }
 }
-New-Item -ItemType Directory -Force -Path $RuntimeRoot, $CacheRoot | Out-Null
+if (Test-Path -LiteralPath $preparedRuntime) {
+    $existing = @(Get-ChildItem -LiteralPath $preparedRuntime -Force -ErrorAction Stop)
+    if ($existing.Count -gt 0) {
+        throw "Prepared Phase A runtime directory must start empty: $preparedRuntime"
+    }
+}
+New-Item -ItemType Directory -Force -Path $preparedRuntime | Out-Null
+foreach ($item in @(Get-ChildItem -LiteralPath $bin -Force)) {
+    if ($item.Name -in @('runtime.json', 'mcwebui_direct_cef_smoke.exe')) { continue }
+    Copy-Item -LiteralPath $item.FullName -Destination $preparedRuntime -Recurse -Force
+}
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'scripts\direct-cef-runtime\generate-runtime-manifest.ps1') -RuntimeRoot $preparedRuntime
+if ($LASTEXITCODE -ne 0) { throw 'Direct CEF runtime manifest generation failed' }
+$preparedRuntime = (Resolve-Path -LiteralPath $preparedRuntime).Path
+$manifest = Get-Content -Raw -LiteralPath (Join-Path $preparedRuntime 'runtime.json') | ConvertFrom-Json
+if ($manifest.runtimeId -ne $runtimeId -or $manifest.files.Count -lt 1) {
+    throw "Generated Direct CEF runtime manifest is invalid: $preparedRuntime"
+}
+if (-not [string]::IsNullOrWhiteSpace($CacheRoot)) {
+    $CacheRoot = [System.IO.Path]::GetFullPath($CacheRoot)
+    New-Item -ItemType Directory -Force -Path $CacheRoot | Out-Null
+}
 $dist = (Resolve-Path (Join-Path $repo 'frontend\playground\dist')).Path
 $python = if ($ExternalPageServer) { (Get-Command python.exe -ErrorAction Stop).Source } else { $null }
 $server = $null
@@ -140,6 +169,8 @@ function Write-RunnerEvidence {
         logPath = $LogPath
         targetHz = $TargetHz
         durationMs = $DurationMs
+        runtimeSource = $RuntimeSource.ToUpperInvariant()
+        runtimeDirectory = $preparedRuntime
         runtimeSnapshots = $snapshots
         renderMarkers = $markers
         invariants = [ordered]@{
@@ -175,12 +206,11 @@ try {
         '--no-daemon',
         '-PmcwebuiBrowserBackend=direct-cef',
         '-PmcwebuiDirectCefProof=true',
-        "-PmcwebuiDirectCefRuntimeDir=$bin",
-        "-PmcwebuiDirectCefHelper=$helper",
-        "-PmcwebuiDirectCefNative=$native",
-        "-PmcwebuiDirectCefCacheDir=$CacheRoot",
+        "-PmcwebuiDirectCefInstanceRoot=$instanceRoot",
         "-PmcwebuiDirectCefTargetHz=$TargetHz"
     )
+    if ($RuntimeSource -eq 'Override') { $common += "-PmcwebuiDirectCefRuntimeDir=$preparedRuntime" }
+    if (-not [string]::IsNullOrWhiteSpace($CacheRoot)) { $common += "-PmcwebuiDirectCefCacheDir=$CacheRoot" }
     if ($url) { $common += "-PmcwebuiDirectCefUrl=$url" }
     # ModDev's client is a visible desktop process. The bounded duration is an
     # outer watchdog; the user can still close F8 with Escape during the run.
@@ -191,6 +221,7 @@ try {
     $client = Start-Process -FilePath $gradle -ArgumentList (@(':targets:neoforge-1.21.1:runClient') + $common) -WorkingDirectory $repo -PassThru -WindowStyle Normal -RedirectStandardOutput $LogPath -RedirectStandardError $errorLog
     $wrapperPid = $client.Id
     Add-Content -LiteralPath $metaLog -Value "MCWebUI direct runner wrapper pid=$wrapperPid"
+    Add-Content -LiteralPath $metaLog -Value "MCWebUI runtime discovery source=$($RuntimeSource.ToUpperInvariant()) directory=$preparedRuntime runtimeId=$runtimeId manifestFiles=$($manifest.files.Count)"
 
     # Gradle starts the ModDev Java process asynchronously. Do not start the
     # requested run duration while NeoForge is still booting: doing so used to

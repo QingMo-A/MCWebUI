@@ -1,40 +1,38 @@
 package dev.qingmo.mcwebui.nativecef;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /** Thin opaque-handle JNI surface for the opt-in Windows Direct CEF backend. */
 public final class DirectCefRuntime implements AutoCloseable {
     public record BridgeQuery(long id, String request) { }
-    static {
-        String absolute = System.getProperty("mcwebui.directCef.native", "").trim();
-        if (!absolute.isEmpty()) {
-            Path nativePath = Path.of(absolute).toAbsolutePath().normalize();
-            Path runtimeDirectory = nativePath.getParent();
-            Path chromeElfPath = runtimeDirectory == null ? null : runtimeDirectory.resolve("chrome_elf.dll");
-            Path cefPath = runtimeDirectory == null ? null : runtimeDirectory.resolve("libcef.dll");
-            if (chromeElfPath == null || !Files.isRegularFile(chromeElfPath)) {
-                throw new UnsatisfiedLinkError("Direct CEF dependency missing: " + chromeElfPath);
-            }
-            if (cefPath == null || !Files.isRegularFile(cefPath)) {
-                throw new UnsatisfiedLinkError("Direct CEF dependency missing: " + cefPath);
-            }
-            // Windows does not automatically search an absolute JNI library's directory for
-            // transitive dependencies. Load CEF's imported helper first, then pinned libcef,
-            // so the JNI DLL resolves without relying on a user/global PATH mutation.
-            System.load(chromeElfPath.toString());
-            System.load(cefPath.toString());
-            System.load(nativePath.toString());
-        } else System.loadLibrary("mcwebui-direct-cef");
-    }
     private long handle;
     private DirectCefRuntime(long handle) { this.handle = handle; }
-    public static DirectCefRuntime create(String url, String cacheDir, String helperPath,
+
+    /**
+     * Create a browser only from a runtime that has passed manifest, layout and hash checks.
+     * Native loading is deliberately explicit so merely linking this class cannot load a
+     * user-selected DLL through a fragile system property.
+     */
+    public static DirectCefRuntime create(ValidatedDirectCefRuntime runtime, String url, Path cacheDir,
                                           long parentWindow, int width, int height, int targetHz) {
-        long handle = nCreate(url, cacheDir, helperPath, parentWindow, width, height, targetHz);
+        if (runtime == null) throw new DirectCefRuntimeException(DirectCefRuntimeFailureReason.INVALID_ARGUMENT,
+                "Validated Direct CEF runtime must not be null");
+        if (cacheDir == null) throw new DirectCefRuntimeException(DirectCefRuntimeFailureReason.INVALID_ARGUMENT,
+                "Direct CEF cache directory must not be null");
+        DirectCefNativeLoader.load(runtime);
+        try {
+            java.nio.file.Files.createDirectories(cacheDir);
+        } catch (java.io.IOException ex) {
+            throw new DirectCefRuntimeException(DirectCefRuntimeFailureReason.IO_ERROR,
+                    "Unable to create Direct CEF cache directory: " + cacheDir, ex, cacheDir);
+        }
+        String helperPath = runtime.helperExecutable().toString();
+        long handle = nCreate(url, cacheDir.toAbsolutePath().normalize().toString(), helperPath,
+                parentWindow, width, height, targetHz);
         if (handle == 0) throw new IllegalStateException("Direct CEF runtime initialization failed");
         return new DirectCefRuntime(handle);
     }
+
     public boolean resize(int width, int height) { return handle != 0 && nResize(handle, width, height); }
     public boolean setVisible(boolean visible) { return handle != 0 && nSetVisible(handle, visible); }
     public boolean refreshGlContext() { return handle != 0 && nRefreshGlContext(handle); }

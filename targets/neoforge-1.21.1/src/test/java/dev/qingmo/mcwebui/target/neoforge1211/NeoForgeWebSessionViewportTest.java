@@ -58,17 +58,17 @@ class NeoForgeWebSessionViewportTest {
     @Test
     void directBackendFailsExplicitlyWhenConfigurationIsIncomplete() {
         assertThrows(IllegalStateException.class, () ->
-                NeoForgeWebSession.validateDirectBackendConfiguration("Windows 11", "", "runtime", "helper"));
+                NeoForgeWebSession.validateDirectEnvironment("Windows 11", ""));
         assertThrows(IllegalStateException.class, () ->
-                NeoForgeWebSession.validateDirectBackendConfiguration("Linux", "http://127.0.0.1:1/", "runtime", "helper"));
+                NeoForgeWebSession.validateDirectEnvironment("Linux", "http://127.0.0.1:1/"));
         assertThrows(IllegalStateException.class, () ->
-                NeoForgeWebSession.validateDirectBackendConfiguration("Windows 11", "http://127.0.0.1:1/", "", "helper"));
+                NeoForgeWebSession.validateDirectBackendConfiguration(
+                        "Windows 11", "http://127.0.0.1:1/", null));
     }
 
     @Test
     void directBackendConfigurationAcceptsCompleteWindowsProofSelection() {
-        NeoForgeWebSession.validateDirectBackendConfiguration(
-                "Windows 11", "http://127.0.0.1:8765/", "cef-runtime", "cef-runtime/mcwebui-cef-helper.exe");
+        NeoForgeWebSession.validateDirectEnvironment("Windows 11", "http://127.0.0.1:8765/");
     }
 
     @Test

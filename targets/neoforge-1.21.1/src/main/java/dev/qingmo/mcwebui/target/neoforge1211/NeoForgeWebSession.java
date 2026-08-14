@@ -14,6 +14,8 @@ import dev.qingmo.mcwebui.runtime.WebView;
 import dev.qingmo.mcwebui.runtime.WebViewConfig;
 import dev.qingmo.mcwebui.security.WebOrigin;
 import dev.qingmo.mcwebui.security.WebPermissionPolicy;
+import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeDiscovery;
+import dev.qingmo.mcwebui.nativecef.ValidatedDirectCefRuntime;
 import net.minecraft.client.Minecraft;
 
 import java.util.EnumSet;
@@ -63,14 +65,19 @@ final class NeoForgeWebSession implements AutoCloseable {
         if (selected.isEmpty() || selected.equals("mcef")) return new NeoForgeMcefBackend();
         if (!selected.equals("direct-cef")) throw new IllegalStateException("Unknown MCWebUI browser backend: " + selected);
         String url = System.getProperty("mcwebui.directCef.url", "").trim();
-        String runtime = System.getProperty("mcwebui.directCef.runtimeDir", "").trim();
-        String cache = System.getProperty("mcwebui.directCef.cacheDir", runtime).trim();
-        String helper = System.getProperty("mcwebui.directCef.helper", "").trim();
+        String runtimeOverride = System.getProperty(DirectCefRuntimeDiscovery.RUNTIME_OVERRIDE_PROPERTY, "").trim();
+        String cacheOverride = System.getProperty(DirectCefRuntimeDiscovery.CACHE_OVERRIDE_PROPERTY, "").trim();
+        java.nio.file.Path instanceRoot = directCefInstanceRoot();
+        ValidatedDirectCefRuntime validatedRuntime = DirectCefRuntimeDiscovery.discover(instanceRoot,
+                runtimeOverride.isEmpty() ? null : java.nio.file.Path.of(runtimeOverride));
+        java.nio.file.Path cache = cacheOverride.isEmpty()
+                ? DirectCefRuntimeDiscovery.standardCacheDirectory(instanceRoot, validatedRuntime.identity())
+                : java.nio.file.Path.of(cacheOverride).toAbsolutePath().normalize();
         if (url.isEmpty()) {
             // Validate all static native settings before opening a listening socket.  The
             // normal validator intentionally still rejects an empty user-supplied URL.
             validateDirectBackendConfiguration(System.getProperty("os.name", ""),
-                    "http://127.0.0.1:1/", runtime, helper);
+                    "http://127.0.0.1:1/", validatedRuntime);
             try {
                 bundledPageServer = BundledWebPageServer.start();
                 url = bundledPageServer.url().toString();
@@ -82,11 +89,11 @@ final class NeoForgeWebSession implements AutoCloseable {
                 throw failure;
             }
         } else {
-            validateDirectBackendConfiguration(System.getProperty("os.name", ""), url, runtime, helper);
+            validateDirectBackendConfiguration(System.getProperty("os.name", ""), url, validatedRuntime);
         }
         long parent = minecraftWindowHandle();
         try {
-            return new DirectCefBackend(parent, java.nio.file.Path.of(runtime), java.nio.file.Path.of(cache), helper, url,
+            return new DirectCefBackend(parent, validatedRuntime, cache, url,
                     Integer.getInteger("mcwebui.directCef.targetHz", 60));
         } catch (RuntimeException failure) {
             if (bundledPageServer != null) {
@@ -97,18 +104,32 @@ final class NeoForgeWebSession implements AutoCloseable {
         }
     }
 
+    private static java.nio.file.Path directCefInstanceRoot() {
+        String configured = System.getProperty(DirectCefRuntimeDiscovery.INSTANCE_ROOT_PROPERTY, "").trim();
+        if (!configured.isEmpty()) return java.nio.file.Path.of(configured).toAbsolutePath().normalize();
+        try {
+            return net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().toAbsolutePath().normalize();
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException("Unable to determine the Minecraft game directory for Direct CEF", ex);
+        }
+    }
+
     static String normalizeBackendSelection(String value) {
         return value == null ? "mcef" : value.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
-    static void validateDirectBackendConfiguration(String osName, String url, String runtime, String helper) {
+    static void validateDirectEnvironment(String osName, String url) {
         if (osName == null || !osName.toLowerCase(java.util.Locale.ROOT).contains("win"))
             throw new IllegalStateException("Direct CEF backend requires Windows");
         if (url == null || url.trim().isEmpty())
             throw new IllegalStateException("mcwebui.directCef.url is required for direct-cef");
         validateDirectBridgeUrl(url);
-        if (runtime == null || runtime.trim().isEmpty() || helper == null || helper.trim().isEmpty())
-            throw new IllegalStateException("Direct CEF runtimeDir/helper are required");
+    }
+
+    static void validateDirectBackendConfiguration(String osName, String url,
+                                                   ValidatedDirectCefRuntime runtime) {
+        validateDirectEnvironment(osName, url);
+        if (runtime == null) throw new IllegalStateException("Direct CEF validated runtime is required");
     }
 
     static void validateDirectBridgeUrl(String value) {
@@ -327,6 +348,15 @@ final class NeoForgeWebSession implements AutoCloseable {
         info.put("browserBackend", directBackend ? "Direct CEF (experimental)" : "CinemaMod MCEF");
         info.put("browserBackendSelection", backendName);
         info.put("browserVersion", directBackend ? "144 (proof runtime)" : "2.1.6-1.21.1");
+        if (backend instanceof DirectCefBackend direct) {
+            var identity = direct.validatedRuntime().identity();
+            info.put("directCefRuntimeId", identity.runtimeId());
+            info.put("directCefRuntimeAbi", identity.mcwebuiRuntimeAbi());
+            info.put("directCefPlatform", identity.platform());
+            info.put("directCefArch", identity.arch());
+            info.put("directCefRuntimeSource", direct.validatedRuntime().source().name());
+            info.put("directCefRuntimeValidated", true);
+        }
         info.put("minecraftGuiWidth", minecraftGuiWidth);
         info.put("minecraftGuiHeight", minecraftGuiHeight);
         info.put("browserViewportWidth", surface == null ? 0 : surface.width());

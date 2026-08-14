@@ -11,6 +11,7 @@ import dev.qingmo.mcwebui.input.WebScrollEvent;
 import dev.qingmo.mcwebui.input.WebTextInputEvent;
 import dev.qingmo.mcwebui.runtime.WebViewConfig;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntime;
+import dev.qingmo.mcwebui.nativecef.ValidatedDirectCefRuntime;
 
 import java.nio.file.Path;
 import java.util.Objects;
@@ -18,22 +19,22 @@ import java.util.Objects;
 /** Experimental Windows-only direct CEF adapter; explicit selection never falls back to MCEF. */
 final class DirectCefBackend implements BrowserBackend {
     private final long parentWindow;
-    private final Path runtimeDirectory;
+    private final ValidatedDirectCefRuntime validatedRuntime;
     private final Path cacheDirectory;
-    private final String helperPath;
     private final String url;
     private final int targetHz;
 
-    DirectCefBackend(long parentWindow, Path runtimeDirectory, Path cacheDirectory, String helperPath, String url, int targetHz) {
+    DirectCefBackend(long parentWindow, ValidatedDirectCefRuntime validatedRuntime,
+                     Path cacheDirectory, String url, int targetHz) {
         this.parentWindow = parentWindow;
-        this.runtimeDirectory = Objects.requireNonNull(runtimeDirectory, "runtimeDirectory");
+        this.validatedRuntime = Objects.requireNonNull(validatedRuntime, "validatedRuntime");
         this.cacheDirectory = Objects.requireNonNull(cacheDirectory, "cacheDirectory");
-        this.helperPath = Objects.requireNonNull(helperPath, "helperPath");
         this.url = Objects.requireNonNull(url, "url");
         this.targetHz = clampTargetHz(targetHz);
     }
 
     int targetHz() { return targetHz; }
+    ValidatedDirectCefRuntime validatedRuntime() { return validatedRuntime; }
 
     static int clampTargetHz(int targetHz) { return Math.max(1, Math.min(144, targetHz)); }
 
@@ -41,7 +42,7 @@ final class DirectCefBackend implements BrowserBackend {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(bridge, "bridge");
         String requestedUrl = url.isBlank() ? config.origin().asUri() + config.initialPath() : url;
-        DirectCefRuntime runtime = DirectCefRuntime.create(requestedUrl, cacheDirectory.toString(), helperPath,
+        DirectCefRuntime runtime = DirectCefRuntime.create(validatedRuntime, requestedUrl, cacheDirectory,
                 parentWindow, config.width(), config.height(), targetHz);
         System.out.println("[MCWebUI] Direct CEF runtime ready diagnostics=" + runtime.diagnosticsJson());
         return new Surface(runtime, bridge, config.width(), config.height());

@@ -4,6 +4,8 @@ import dev.qingmo.mcwebui.bridge.BridgeCapability;
 import dev.qingmo.mcwebui.bridge.BridgeDispatcher;
 import dev.qingmo.mcwebui.bridge.WebBridge;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntime;
+import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeDiscovery;
+import dev.qingmo.mcwebui.nativecef.ValidatedDirectCefRuntime;
 import dev.qingmo.mcwebui.security.WebOrigin;
 import dev.qingmo.mcwebui.security.WebPermissionPolicy;
 import dev.qingmo.mcwebui.state.WebStateStore;
@@ -24,8 +26,19 @@ class DirectCefBridgeIntegrationTest {
     @Test void realVuePageCompletesTheJavaHandshake() throws Exception {
         assumeTrue(Boolean.getBoolean("mcwebui.directCef.integration"));
         String configuredUrl = System.getProperty("mcwebui.directCef.integration.url", "").trim();
-        String helper = required("mcwebui.directCef.integration.helper");
-        Path cache = Path.of(required("mcwebui.directCef.integration.cacheDir"));
+        String configuredRuntime = System.getProperty("mcwebui.directCef.integration.runtimeDir", "").trim();
+        String configuredInstance = System.getProperty("mcwebui.directCef.integration.instanceRoot", "").trim();
+        assumeTrue(!configuredRuntime.isEmpty() || !configuredInstance.isEmpty(),
+                "integration requires runtimeDir or instanceRoot");
+        Path instanceRoot = configuredInstance.isEmpty()
+                ? Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize()
+                : Path.of(configuredInstance).toAbsolutePath().normalize();
+        ValidatedDirectCefRuntime validatedRuntime = DirectCefRuntimeDiscovery.discover(instanceRoot,
+                configuredRuntime.isEmpty() ? null : Path.of(configuredRuntime));
+        String configuredCache = System.getProperty("mcwebui.directCef.integration.cacheDir", "").trim();
+        Path cache = configuredCache.isEmpty()
+                ? DirectCefRuntimeDiscovery.standardCacheDirectory(instanceRoot, validatedRuntime.identity())
+                : Path.of(configuredCache).toAbsolutePath().normalize();
         Path frontendResources = Path.of(System.getProperty("mcwebui.directCef.integration.resources",
                 "build/resources/main")).toAbsolutePath();
         assumeTrue(Files.isRegularFile(frontendResources.resolve("web/playground/index.html")),
@@ -46,9 +59,9 @@ class DirectCefBridgeIntegrationTest {
                      ? BundledWebPageServer.start(frontendLoader) : null;
              WebBridge bridge = new WebBridge(WebOrigin.mcui("playground.mcwebui"),
                      permissions, dispatcher, state);
-             DirectCefRuntime runtime = DirectCefRuntime.create(
+             DirectCefRuntime runtime = DirectCefRuntime.create(validatedRuntime,
                      configuredUrl.isEmpty() ? pageServer.url().toString() : configuredUrl,
-                     cache.toString(), helper, 0L, 854, 480, 60)) {
+                     cache, 0L, 854, 480, 60)) {
             long navigationEpoch = runtime.bridgeNavigationEpoch();
             final long[] outboundEpoch = {navigationEpoch};
             try (DirectBridgeHost host = new DirectBridgeHost(bridge,
