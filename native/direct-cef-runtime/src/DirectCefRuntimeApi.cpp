@@ -32,3 +32,20 @@ extern "C" __declspec(dllexport) const char* mcwebui_direct_cef_diagnostics(void
                 : "{\"ready\":false}";
   return json.c_str();
 }
+
+extern "C" __declspec(dllexport) const char* mcwebui_direct_cef_poll_bridge(
+    void* handle, std::uint64_t* query_id) {
+  thread_local std::string request;
+  if (!handle || !query_id) return nullptr;
+  DirectCefRuntime::BridgeQuery query;
+  if (!static_cast<DirectCefRuntime*>(handle)->PollBridgeQuery(&query)) return nullptr;
+  *query_id = query.id;
+  request = std::move(query.request);
+  return request.c_str();
+}
+
+extern "C" __declspec(dllexport) int mcwebui_direct_cef_complete_bridge(
+    void* handle, std::uint64_t query_id, const char* response) {
+  return handle && response && static_cast<DirectCefRuntime*>(handle)->CompleteBridgeQuery(
+      query_id, response) ? 1 : 0;
+}

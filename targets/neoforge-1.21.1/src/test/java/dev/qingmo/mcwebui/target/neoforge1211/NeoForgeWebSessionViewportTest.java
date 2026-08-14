@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import dev.qingmo.mcwebui.runtime.WebViewLifecycle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -41,6 +42,13 @@ class NeoForgeWebSessionViewportTest {
     }
 
     @Test
+    void minecraftWheelNotchesUseWindowsCefDeltaUnits() {
+        assertEquals(120.0, NeoForgeWebSession.cefWheelDelta(1.0));
+        assertEquals(-120.0, NeoForgeWebSession.cefWheelDelta(-1.0));
+        assertEquals(30.0, NeoForgeWebSession.cefWheelDelta(0.25));
+    }
+
+    @Test
     void backendSelectionDefaultsToMcefAndIsCaseInsensitive() {
         assertEquals("mcef", NeoForgeWebSession.normalizeBackendSelection(null));
         assertEquals("mcef", NeoForgeWebSession.normalizeBackendSelection("  MCEF "));
@@ -64,9 +72,26 @@ class NeoForgeWebSessionViewportTest {
     }
 
     @Test
+    void directBridgeRejectsNonLoopbackOrigins() {
+        assertThrows(IllegalStateException.class, () ->
+                NeoForgeWebSession.validateDirectBridgeUrl("https://example.com/playground"));
+        assertDoesNotThrow(() ->
+                NeoForgeWebSession.validateDirectBridgeUrl("http://127.0.0.1:18765/?view=direct-cef"));
+    }
+
+    @Test
     void directBackendSelectionIsIndependentOfMcefReadiness() {
         assertTrue(NeoForgeBackendSelection.directCefSelected(" direct-cef "));
         assertFalse(NeoForgeBackendSelection.directCefSelected("mcef"));
         assertFalse(NeoForgeBackendSelection.directCefSelected(null));
+    }
+
+    @Test
+    void warmSessionOnlyOpensAfterARealBrowserTextureExists() {
+        assertFalse(NeoForgeBackendSelection.shouldOpenWarmSession(true, false, false, false));
+        assertFalse(NeoForgeBackendSelection.shouldOpenWarmSession(true, true, false, false));
+        assertFalse(NeoForgeBackendSelection.shouldOpenWarmSession(true, true, true, true));
+        assertFalse(NeoForgeBackendSelection.shouldOpenWarmSession(false, true, true, false));
+        assertTrue(NeoForgeBackendSelection.shouldOpenWarmSession(true, true, true, false));
     }
 }

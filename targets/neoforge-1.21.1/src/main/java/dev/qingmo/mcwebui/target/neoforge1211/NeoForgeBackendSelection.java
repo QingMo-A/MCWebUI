@@ -6,4 +6,9 @@ final class NeoForgeBackendSelection {
     static boolean directCefSelected(String selection) {
         return selection != null && "direct-cef".equalsIgnoreCase(selection.trim());
     }
+
+    static boolean shouldOpenWarmSession(boolean requested, boolean sessionPresent,
+                                         boolean renderableFrame, boolean alreadyOpen) {
+        return requested && sessionPresent && renderableFrame && !alreadyOpen;
+    }
 }

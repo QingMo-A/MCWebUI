@@ -11,6 +11,7 @@ java {
 def framePacingProof = providers.gradleProperty('mcwebuiFramePacingProof').map { it.toBoolean() }.orElse(false)
 def directCef = providers.gradleProperty('mcwebuiBrowserBackend').map { it.equalsIgnoreCase('direct-cef') }.orElse(false)
 def directCefProof = providers.gradleProperty('mcwebuiDirectCefProof').map { it.toBoolean() }.orElse(false)
+def directCefBridgeIntegration = providers.gradleProperty('mcwebuiDirectCefBridgeIntegration').map { it.toBoolean() }.orElse(false)
 
 sourceSets {
     main {
@@ -87,12 +88,17 @@ if (directCef.get()) {
         def directCache = providers.gradleProperty('mcwebuiDirectCefCacheDir').orElse('').get()
         def directTargetHz = providers.gradleProperty('mcwebuiDirectCefTargetHz').orElse('60').get()
         jvmArgs "-Dmcwebui.browserBackend=direct-cef",
-                "-Dmcwebui.directCef.url=${directUrl}",
                 "-Dmcwebui.directCef.runtimeDir=${directRuntime}",
                 "-Dmcwebui.directCef.helper=${directHelper}",
                 "-Dmcwebui.directCef.native=${directNative}",
                 "-Dmcwebui.directCef.cacheDir=${directCache}",
                 "-Dmcwebui.directCef.targetHz=${directTargetHz}"
+        if (!directUrl.isBlank()) {
+            // Explicit loopback URLs remain available for isolated transport tests.
+            // Normal Direct runs omit this property and serve the bundled page from
+            // inside the Minecraft process, independent of the launcher shell.
+            jvmArgs "-Dmcwebui.directCef.url=${directUrl}"
+        }
     }
 }
 
@@ -118,6 +124,19 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
+    if (directCefBridgeIntegration.get()) {
+        systemProperty 'mcwebui.directCef.integration', 'true'
+        systemProperty 'mcwebui.directCef.integration.url',
+                providers.gradleProperty('mcwebuiDirectCefUrl').orElse('').get()
+        systemProperty 'mcwebui.directCef.integration.cacheDir',
+                providers.gradleProperty('mcwebuiDirectCefCacheDir').orElse('').get()
+        systemProperty 'mcwebui.directCef.integration.helper',
+                providers.gradleProperty('mcwebuiDirectCefHelper').orElse('').get()
+        systemProperty 'mcwebui.directCef.native',
+                providers.gradleProperty('mcwebuiDirectCefNative').orElse('').get()
+        systemProperty 'mcwebui.directCef.integration.resources',
+                layout.buildDirectory.dir('resources/main').get().asFile.absolutePath
+    }
 }
 
 tasks.named('processResources') {

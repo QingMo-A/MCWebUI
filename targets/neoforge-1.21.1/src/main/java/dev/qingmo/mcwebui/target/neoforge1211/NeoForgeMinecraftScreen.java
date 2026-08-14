@@ -17,10 +17,18 @@ import org.lwjgl.glfw.GLFW;
 /** The sole NeoForge Screen boundary; all browser/session work lives in NeoForgeWebSession. */
 public final class NeoForgeMinecraftScreen extends Screen {
     private final NeoForgeWebSession session;
+    private final boolean retainSession;
 
     public NeoForgeMinecraftScreen(BridgeDispatcher dispatcher, NeoForgeDemoBridge demo) {
         super(Component.literal("MCWebUI Runtime Demo"));
         this.session = new NeoForgeWebSession(dispatcher, demo);
+        this.retainSession = false;
+    }
+
+    NeoForgeMinecraftScreen(NeoForgeWebSession session) {
+        super(Component.literal("MCWebUI Runtime Demo"));
+        this.session = session;
+        this.retainSession = true;
     }
 
     @Override public boolean isPauseScreen() { return false; }
@@ -30,7 +38,9 @@ public final class NeoForgeMinecraftScreen extends Screen {
     }
 
     @Override public void resize(Minecraft minecraft, int width, int height) {
+        if (width < 1 || height < 1) return;
         super.resize(minecraft, width, height);
+        session.refreshRenderContext();
         session.resize(width, height, minecraft.getWindow().getGuiScale());
     }
 
@@ -84,6 +94,13 @@ public final class NeoForgeMinecraftScreen extends Screen {
 
     @Override public boolean mouseClicked(double x, double y, int button) { session.mouseButton(x, y, button, true); return true; }
     @Override public boolean mouseReleased(double x, double y, int button) { session.mouseButton(x, y, button, false); return true; }
+    @Override public boolean mouseDragged(double x, double y, int button, double dragX, double dragY) {
+        // Screen's default handler does not forward drag motion to the browser. The native
+        // backend keeps the pressed-button mask from mouseClicked until mouseReleased, so a
+        // normal move here becomes a CEF drag and HTML range/scrollbar controls stay usable.
+        session.mouseMove(x, y);
+        return true;
+    }
     @Override public void mouseMoved(double x, double y) { session.mouseMove(x, y); }
     @Override public boolean mouseScrolled(double x, double y, double scrollX, double scrollY) { session.mouseScroll(x, y, scrollX, scrollY); return true; }
     @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
@@ -94,7 +111,14 @@ public final class NeoForgeMinecraftScreen extends Screen {
     @Override public boolean charTyped(char codePoint, int modifiers) { session.text(String.valueOf(codePoint), false, true); return true; }
 
     @Override public void onClose() {
-        session.close();
+        if (retainSession) session.deactivate();
+        else session.close();
         super.onClose();
+    }
+
+    @Override public void removed() {
+        if (retainSession) session.deactivate();
+        else if (!session.isClosed()) session.close();
+        super.removed();
     }
 }

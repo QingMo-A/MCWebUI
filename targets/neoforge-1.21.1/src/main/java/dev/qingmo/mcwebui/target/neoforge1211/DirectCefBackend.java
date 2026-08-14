@@ -30,8 +30,12 @@ final class DirectCefBackend implements BrowserBackend {
         this.cacheDirectory = Objects.requireNonNull(cacheDirectory, "cacheDirectory");
         this.helperPath = Objects.requireNonNull(helperPath, "helperPath");
         this.url = Objects.requireNonNull(url, "url");
-        this.targetHz = Math.max(1, targetHz);
+        this.targetHz = clampTargetHz(targetHz);
     }
+
+    int targetHz() { return targetHz; }
+
+    static int clampTargetHz(int targetHz) { return Math.max(1, Math.min(144, targetHz)); }
 
     @Override public DirectCefRenderableSurface createSurface(WebViewConfig config, WebBridge bridge) {
         Objects.requireNonNull(config, "config");
@@ -40,16 +44,27 @@ final class DirectCefBackend implements BrowserBackend {
         DirectCefRuntime runtime = DirectCefRuntime.create(requestedUrl, cacheDirectory.toString(), helperPath,
                 parentWindow, config.width(), config.height(), targetHz);
         System.out.println("[MCWebUI] Direct CEF runtime ready diagnostics=" + runtime.diagnosticsJson());
-        return new Surface(runtime, config.width(), config.height());
+        return new Surface(runtime, bridge, config.width(), config.height());
     }
 
     private static final class Surface implements DirectCefRenderableSurface {
         private final DirectCefRuntime runtime;
         private final FrameMetrics metrics = new FrameMetrics();
+        private final DirectBridgeHost bridgeHost;
         private volatile int width;
         private volatile int height;
         private volatile boolean closed;
-        Surface(DirectCefRuntime runtime, int width, int height) { this.runtime=runtime; this.width=width; this.height=height; }
+        private int pressedButtons;
+        private volatile long navigationEpoch;
+        private boolean handshakeLogged;
+        Surface(DirectCefRuntime runtime, WebBridge bridge, int width, int height) {
+            this.runtime=runtime;
+            this.navigationEpoch = runtime.bridgeNavigationEpoch();
+            this.bridgeHost = new DirectBridgeHost(bridge,
+                    encoded -> runtime.deliverBridgeMessage(navigationEpoch, encoded));
+            this.width=width;
+            this.height=height;
+        }
         @Override public int width() { return width; }
         @Override public int height() { return height; }
         @Override public void load(String url) { ensureOpen(); }
@@ -59,8 +74,16 @@ final class DirectCefBackend implements BrowserBackend {
             if (event instanceof WebMouseEvent mouse) {
                 switch (mouse.type()) {
                     case MOVE -> runtime.mouseMove((int)Math.round(mouse.x()), (int)Math.round(mouse.y()), 0, false);
-                    case DOWN -> runtime.mouseButton((int)Math.round(mouse.x()), (int)Math.round(mouse.y()), 0, mouse.button(), false, 1);
-                    case UP -> runtime.mouseButton((int)Math.round(mouse.x()), (int)Math.round(mouse.y()), 0, mouse.button(), true, 1);
+                    case DOWN -> {
+                        pressedButtons |= mouseButtonMask(mouse.button());
+                        runtime.setMouseButtons(pressedButtons);
+                        runtime.mouseButton((int)Math.round(mouse.x()), (int)Math.round(mouse.y()), 0, mouse.button(), false, 1);
+                    }
+                    case UP -> {
+                        pressedButtons &= ~mouseButtonMask(mouse.button());
+                        runtime.setMouseButtons(pressedButtons);
+                        runtime.mouseButton((int)Math.round(mouse.x()), (int)Math.round(mouse.y()), 0, mouse.button(), true, 1);
+                    }
                 }
             } else if (event instanceof WebScrollEvent scroll) {
                 runtime.mouseWheel((int)Math.round(scroll.x()), (int)Math.round(scroll.y()), 0,
@@ -75,14 +98,55 @@ final class DirectCefBackend implements BrowserBackend {
             }
         }
         @Override public FrameMetrics metrics() { return metrics; }
+        @Override public void pumpBridge() {
+            ensureOpen();
+            long currentEpoch = runtime.bridgeNavigationEpoch();
+            if (currentEpoch != navigationEpoch) {
+                navigationEpoch = currentEpoch;
+                bridgeHost.resetSession();
+                handshakeLogged = false;
+            }
+            for (int drained = 0; drained < 64; drained++) {
+                DirectCefRuntime.BridgeQuery query = runtime.pollBridgeQuery();
+                if (query == null) return;
+                try {
+                    runtime.completeBridgeQuery(query.id(), bridgeHost.handle(query.request()));
+                    if (!handshakeLogged && bridgeHost.connected()) {
+                        handshakeLogged = true;
+                        System.out.println("[MCWebUI] Direct CEF bridge handshake completed");
+                    }
+                } catch (RuntimeException ex) {
+                    runtime.failBridgeQuery(query.id(), 500, "Bridge host failed");
+                }
+            }
+        }
+        @Override public boolean bridgeReady() { return bridgeHost.connected(); }
         @Override public boolean supportsExternalFrames() { return true; }
-        @Override public boolean requestExternalFrame() { ensureOpen(); return runtime.requestFrame(); }
+        @Override public boolean requestExternalFrame() {
+            ensureOpen();
+            boolean requested = runtime.requestFrame();
+            if (requested) metrics.recordExternalRequest();
+            return requested;
+        }
+        @Override public void setVisible(boolean visible) {
+            ensureOpen();
+            if (!visible) {
+                pressedButtons = 0;
+                runtime.setMouseButtons(0);
+                runtime.setFocus(false);
+            }
+            runtime.setVisible(visible);
+        }
+        @Override public void refreshGlContext() { ensureOpen(); runtime.refreshGlContext(); }
         @Override public boolean beginRenderFrame() { ensureOpen(); return runtime.beginRenderFrame(); }
         @Override public void endRenderFrame() { if(!closed) runtime.endRenderFrame(); }
         @Override public int textureId() { return runtime.textureId(); }
         @Override public String alphaMode() { return runtime.alphaMode(); }
         @Override public boolean yFlipped() { return runtime.yFlipped(); }
-        @Override public void close() { if(closed)return; closed=true; runtime.close(); }
+        @Override public void close() { if(closed)return; closed=true; bridgeHost.close(); runtime.close(); }
         private void ensureOpen(){ if(closed) throw new IllegalStateException("Direct CEF surface is closed"); }
+        private static int mouseButtonMask(int button) {
+            return switch (button) { case 0 -> 1; case 1 -> 2; case 2 -> 4; default -> 0; };
+        }
     }
 }

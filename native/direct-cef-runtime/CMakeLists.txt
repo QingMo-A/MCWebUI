@@ -34,6 +34,8 @@ if(MSVC)
 endif()
 
 set(RUNTIME_SOURCES
+  src/DirectCefApp.cpp
+  src/DirectCefApp.h
   src/DirectCefRuntime.cpp
   src/DirectCefRuntime.h
   src/DirectCefRuntimeJni.cpp
@@ -73,7 +75,11 @@ set_target_properties(mcwebui_direct_cef PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
 )
 
-add_executable(mcwebui_cef_helper src/DirectCefHelper.cpp)
+add_executable(mcwebui_cef_helper
+  src/DirectCefHelper.cpp
+  src/DirectCefApp.cpp
+  src/DirectCefApp.h
+)
 target_include_directories(mcwebui_cef_helper PRIVATE "${CEF_ROOT}" "${CEF_INCLUDE_PATH}")
 target_compile_features(mcwebui_cef_helper PRIVATE cxx_std_17)
 target_compile_definitions(mcwebui_cef_helper PRIVATE
