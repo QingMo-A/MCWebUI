@@ -112,7 +112,8 @@ public final class DirectCefRuntimeValidator {
         return normalized.toString();
     }
 
-    private static void validateIdentity(DirectCefRuntimeManifest manifest, DirectCefRuntimeRequirement requirement) {
+    /** Shared identity gate; the package importer validates ZIP manifests against the same rule. */
+    static void validateIdentity(DirectCefRuntimeManifest manifest, DirectCefRuntimeRequirement requirement) {
         if (manifest.schemaVersion() != requirement.schemaVersion())
             throw failure(DirectCefRuntimeFailureReason.UNSUPPORTED_SCHEMA, "Unsupported Direct CEF manifest schema: " + manifest.schemaVersion(), null, null);
         if (manifest.mcwebuiRuntimeAbi() != requirement.mcwebuiRuntimeAbi())
@@ -129,7 +130,8 @@ public final class DirectCefRuntimeValidator {
             throw failure(DirectCefRuntimeFailureReason.WRONG_ARCH, "Direct CEF runtime architecture is not supported: " + manifest.arch(), null, null);
     }
 
-    private static void validateManifest(DirectCefRuntimeManifest manifest) {
+    /** Shared manifest-shape gate; the package importer applies the same rules before extraction. */
+    static void validateManifest(DirectCefRuntimeManifest manifest) {
         if (manifest.files().isEmpty()) throw failure(DirectCefRuntimeFailureReason.MANIFEST_INVALID, "Direct CEF runtime manifest has no files", null, null);
         for (DirectCefRuntimeManifest.FileEntry file : manifest.files()) {
             String safe = safeRelativePath(file.path());

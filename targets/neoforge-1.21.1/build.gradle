@@ -12,6 +12,9 @@ def framePacingProof = providers.gradleProperty('mcwebuiFramePacingProof').map {
 def directCef = providers.gradleProperty('mcwebuiBrowserBackend').map { it.equalsIgnoreCase('direct-cef') }.orElse(false)
 def directCefProof = providers.gradleProperty('mcwebuiDirectCefProof').map { it.toBoolean() }.orElse(false)
 def directCefBridgeIntegration = providers.gradleProperty('mcwebuiDirectCefBridgeIntegration').map { it.toBoolean() }.orElse(false)
+def proofPackage = providers.gradleProperty('mcwebuiProofPackage').orElse('').get()
+def proofInstanceRoot = providers.gradleProperty('mcwebuiProofInstanceRoot').orElse('').get()
+def proofEvidence = providers.gradleProperty('mcwebuiProofEvidence').orElse('').get()
 
 sourceSets {
     main {
@@ -86,6 +89,7 @@ if (directCef.get()) {
         def directInstanceRoot = providers.gradleProperty('mcwebuiDirectCefInstanceRoot').orElse('').get()
         def directCache = providers.gradleProperty('mcwebuiDirectCefCacheDir').orElse('').get()
         def directTargetHz = providers.gradleProperty('mcwebuiDirectCefTargetHz').orElse('60').get()
+        def directPackage = providers.gradleProperty('mcwebuiDirectCefPackage').orElse('').get()
         jvmArgs "-Dmcwebui.browserBackend=direct-cef",
                 "-Dmcwebui.directCef.targetHz=${directTargetHz}"
         if (!directInstanceRoot.isBlank()) {
@@ -102,6 +106,10 @@ if (directCef.get()) {
             // Normal Direct runs omit this property and serve the bundled page from
             // inside the Minecraft process, independent of the launcher shell.
             jvmArgs "-Dmcwebui.directCef.url=${directUrl}"
+        }
+        if (!directPackage.isBlank()) {
+            // Prefill the runtime setup screen's package path box for acceptance runs.
+            jvmArgs "-Dmcwebui.directCef.package=${directPackage}"
         }
     }
 }
@@ -128,6 +136,15 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
+    if (!proofPackage.isBlank()) {
+        systemProperty 'mcwebui.proof.package', proofPackage
+    }
+    if (!proofInstanceRoot.isBlank()) {
+        systemProperty 'mcwebui.proof.instanceRoot', proofInstanceRoot
+    }
+    if (!proofEvidence.isBlank()) {
+        systemProperty 'mcwebui.proof.evidence', proofEvidence
+    }
     if (directCefBridgeIntegration.get()) {
         systemProperty 'mcwebui.directCef.integration', 'true'
         systemProperty 'mcwebui.directCef.integration.url',

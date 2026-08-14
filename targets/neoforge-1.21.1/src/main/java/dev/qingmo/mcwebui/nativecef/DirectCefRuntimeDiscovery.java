@@ -77,8 +77,12 @@ public final class DirectCefRuntimeDiscovery {
 
     /** A non-throwing probe used by setup UI/tests while retaining the typed failure. */
     public static Probe probe(Path instanceRoot, Path explicitOverride) {
+        return probe(instanceRoot, explicitOverride, DirectCefRuntimeRequirement.required());
+    }
+
+    public static Probe probe(Path instanceRoot, Path explicitOverride, DirectCefRuntimeRequirement requirement) {
         try {
-            return new Probe(discover(instanceRoot, explicitOverride), null);
+            return new Probe(discover(instanceRoot, explicitOverride, requirement), null);
         } catch (DirectCefRuntimeException failure) {
             return new Probe(null, failure);
         }

@@ -13,6 +13,7 @@ param(
     [switch]$ExternalPageServer,
     [string]$LogPath = (Join-Path $env:TEMP 'mcwebui-direct-cef-neoforge-run.log'),
     [switch]$SkipBuild,
+    [switch]$SkipRuntimePrepare,
     [switch]$DirectOnly,
     [switch]$AutoOpen,
     [switch]$CollectEvidence
@@ -51,19 +52,27 @@ $preparedRuntime = if ($RuntimeSource -eq 'Standard') {
 foreach ($required in @((Join-Path $bin 'mcwebui-direct-cef.dll'), (Join-Path $bin 'mcwebui-cef-helper.exe'), (Join-Path $bin 'libcef.dll'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Direct CEF runtime artifact missing: $required" }
 }
-if (Test-Path -LiteralPath $preparedRuntime) {
-    $existing = @(Get-ChildItem -LiteralPath $preparedRuntime -Force -ErrorAction Stop)
-    if ($existing.Count -gt 0) {
-        throw "Prepared Phase A runtime directory must start empty: $preparedRuntime"
+if ($SkipRuntimePrepare) {
+    # The runtime is already installed in the instance (for example by the Phase B
+    # importer proof). Only require a complete prepared/installed standard runtime.
+    if (-not (Test-Path -LiteralPath (Join-Path $preparedRuntime 'runtime.json') -PathType Leaf)) {
+        throw "SkipRuntimePrepare requires an already prepared runtime with runtime.json: $preparedRuntime"
     }
+} else {
+    if (Test-Path -LiteralPath $preparedRuntime) {
+        $existing = @(Get-ChildItem -LiteralPath $preparedRuntime -Force -ErrorAction Stop)
+        if ($existing.Count -gt 0) {
+            throw "Prepared Phase A runtime directory must start empty: $preparedRuntime"
+        }
+    }
+    New-Item -ItemType Directory -Force -Path $preparedRuntime | Out-Null
+    foreach ($item in @(Get-ChildItem -LiteralPath $bin -Force)) {
+        if ($item.Name -in @('runtime.json', 'mcwebui_direct_cef_smoke.exe')) { continue }
+        Copy-Item -LiteralPath $item.FullName -Destination $preparedRuntime -Recurse -Force
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'scripts\direct-cef-runtime\generate-runtime-manifest.ps1') -RuntimeRoot $preparedRuntime
+    if ($LASTEXITCODE -ne 0) { throw 'Direct CEF runtime manifest generation failed' }
 }
-New-Item -ItemType Directory -Force -Path $preparedRuntime | Out-Null
-foreach ($item in @(Get-ChildItem -LiteralPath $bin -Force)) {
-    if ($item.Name -in @('runtime.json', 'mcwebui_direct_cef_smoke.exe')) { continue }
-    Copy-Item -LiteralPath $item.FullName -Destination $preparedRuntime -Recurse -Force
-}
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'scripts\direct-cef-runtime\generate-runtime-manifest.ps1') -RuntimeRoot $preparedRuntime
-if ($LASTEXITCODE -ne 0) { throw 'Direct CEF runtime manifest generation failed' }
 $preparedRuntime = (Resolve-Path -LiteralPath $preparedRuntime).Path
 $manifest = Get-Content -Raw -LiteralPath (Join-Path $preparedRuntime 'runtime.json') | ConvertFrom-Json
 if ($manifest.runtimeId -ne $runtimeId -or $manifest.files.Count -lt 1) {
