@@ -24,6 +24,8 @@ const selectOptions = [
   { value: "expressive", label: "Expressive" },
 ];
 const rangeValue = ref(62);
+const webscreenOpacity = ref(100);
+const webscreenOpacityValue = computed(() => webscreenOpacity.value / 100);
 const progress = ref(72);
 const selectedSegment = ref("Vue");
 const showModal = ref(false);
@@ -239,6 +241,12 @@ function closeSelectOnEscape(event: KeyboardEvent) {
     selectTrigger.value?.focus();
   }
 }
+function stopAnimationWhenHidden() {
+  // CEF WasHidden drives the Page Visibility API. If the user leaves the F8
+  // screen while the lab is running, stop its rAF and diagnostics interval so
+  // the retained warm browser returns to its near-idle state.
+  if (document.hidden) stopAnimation();
+}
 watch(activeTab, (tab) => {
   if (tab === "runtime") void refreshDiagnostics();
 });
@@ -246,6 +254,7 @@ onMounted(async () => {
   if (transparentLab) document.body.classList.add("transparent-mode");
   document.addEventListener("pointerdown", closeSelectOnOutside);
   document.addEventListener("keydown", closeSelectOnEscape);
+  document.addEventListener("visibilitychange", stopAnimationWhenHidden);
   try {
     await client.connect();
     // Diagnostics are intentionally sampled on connect, when the Runtime tab is opened, or
@@ -259,6 +268,7 @@ onBeforeUnmount(() => {
   document.documentElement.classList.remove("transparent-mode");
   document.removeEventListener("pointerdown", closeSelectOnOutside);
   document.removeEventListener("keydown", closeSelectOnEscape);
+  document.removeEventListener("visibilitychange", stopAnimationWhenHidden);
   if (toastTimer) window.clearTimeout(toastTimer);
   stopAnimation();
 });
@@ -293,7 +303,12 @@ onBeforeUnmount(() => {
     <div v-if="labModal" class="lab-modal-backdrop" @click.self="closeLabModal()"><section class="lab-modal" role="dialog" aria-modal="true" aria-labelledby="lab-modal-title"><h2 id="lab-modal-title">Transparent modal</h2><p>Opacity, transform, rounded corners, shadow, and focus are all browser-rendered.</p><button data-test="modal-close" class="lab-button" type="button" @click="closeLabModal()">Close</button></section></div>
     <p class="transparent-lab-footer">ESC closes the modal or the native window · IME is not tested in this proof</p>
   </main>
-  <main v-else class="shell">
+  <main v-else class="shell" :style="{ '--webscreen-opacity': webscreenOpacityValue }">
+    <label class="webscreen-opacity-control" for="webscreen-opacity">
+      <span>WebScreen opacity</span>
+      <strong>{{ webscreenOpacity }}%</strong>
+      <input id="webscreen-opacity" v-model.number="webscreenOpacity" data-test="webscreen-opacity" type="range" min="0" max="100" step="1" />
+    </label>
     <header class="topbar">
       <div class="brand"><span class="brand-mark">M</span><div><p class="eyebrow">MCWebUI</p><h1>Runtime showcase</h1></div></div>
       <div class="topbar-meta"><span class="live-dot" :class="statusClass"></span><span>{{ statusLabel }}</span><span class="separator">·</span><span>{{ diagnostics.loader ?? "Target adapter" }}</span></div>

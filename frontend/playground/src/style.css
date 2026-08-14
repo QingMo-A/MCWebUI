@@ -2,7 +2,7 @@
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #e7ecf4;
-  background: #0b0e14;
+  background: transparent;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --bg: #0b0e14;
@@ -19,14 +19,19 @@
   --red: #ff7f90;
 }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 80% -15%, #1a2850 0, transparent 42%), var(--bg); }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: transparent; }
 body.transparent-mode { background: transparent; }
 html.transparent-mode { background: transparent; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 code { color: #b9c8ff; font-size: .9em; }
-.shell { min-height: 100vh; }
+.shell { position: relative; isolation: isolate; min-height: 100vh; --webscreen-opacity: 1; }
+.shell::before { position: fixed; inset: 0; z-index: -1; content: ""; pointer-events: none; background: radial-gradient(circle at 80% -15%, #1a2850 0, transparent 42%), var(--bg); opacity: var(--webscreen-opacity); transition: opacity .12s linear; }
+.shell > .topbar, .shell > .workspace, .shell > .toast, .shell > .modal-backdrop { opacity: var(--webscreen-opacity); transition: opacity .12s linear; }
+.webscreen-opacity-control { position: fixed; right: 18px; bottom: 18px; z-index: 90; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px 12px; width: min(280px, calc(100vw - 36px)); border: 1px solid var(--border-strong); border-radius: 11px; padding: 11px 13px; color: var(--muted); background: rgba(11,14,20,.94); box-shadow: 0 14px 36px rgba(0,0,0,.32); font-size: .74rem; }
+.webscreen-opacity-control strong { color: var(--green); font-variant-numeric: tabular-nums; }
+.webscreen-opacity-control input { grid-column: 1 / -1; width: 100%; accent-color: var(--green); }
 .topbar { height: 76px; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; border-bottom: 1px solid var(--border); background: rgba(11, 14, 20, .78); }
 .brand, .topbar-meta, .side-note, .section-heading, .counter-row, .inline-form, .button-row, .progress-label, .switch-row { display: flex; align-items: center; }
 .brand { gap: 12px; }
