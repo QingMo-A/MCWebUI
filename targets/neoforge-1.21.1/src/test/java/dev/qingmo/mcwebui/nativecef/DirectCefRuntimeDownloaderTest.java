@@ -42,6 +42,10 @@ class DirectCefRuntimeDownloaderTest {
                 + "\"chromiumVersion\":\"144.0.7559.259\",\"platform\":\"windows\",\"arch\":\"x86_64\"},"
                 + "\"downloadUri\":\"https://downloads.example.invalid/runtime.zip\"}";
         assertEquals(descriptor, DirectCefRuntimeReleaseDescriptor.parse(json));
+
+        DirectCefRuntimeReleaseDescriptor sized = DirectCefRuntimeReleaseDescriptor.parse(
+                json.replace("\"packageSize\":1", "\"packageSize\":1,\"runtimePayloadSize\":123"));
+        assertEquals(123L, sized.runtimePayloadSize());
     }
 
     @Test void descriptorRejectsNonHttpsAndInvalidSize() {
@@ -177,6 +181,15 @@ class DirectCefRuntimeDownloaderTest {
             throw new AssertionError("transport must not start when disk bound fails");
         }).download(enormous, temp.resolve("disk"), null, null);
         assertEquals(DirectCefRuntimeFailureReason.INSUFFICIENT_DISK_SPACE, disk.failure().reason());
+    }
+
+    @Test void freshInstallDiskBudgetIncludesZipPayloadAndMargin() {
+        assertEquals(10L + 30L + DirectCefRuntimeDownloader.STAGING_MARGIN_BYTES,
+                DirectCefRuntimeDownloader.requiredFreshInstallBytes(10L, 30L));
+        assertEquals(20L + DirectCefRuntimeDownloader.STAGING_MARGIN_BYTES,
+                DirectCefRuntimeDownloader.requiredFreshInstallBytes(10L, 0L));
+        assertThrows(DirectCefRuntimeException.class,
+                () -> DirectCefRuntimeDownloader.requiredFreshInstallBytes(Long.MAX_VALUE, 1L));
     }
 
     @Test void cancellationClosesBlockingResponseAndStopsWorker() throws Exception {

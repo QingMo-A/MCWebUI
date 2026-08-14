@@ -25,6 +25,7 @@ public record DirectCefRuntimeReleaseDescriptor(
         String artifactRevision,
         String packageFileName,
         long packageSize,
+        long runtimePayloadSize,
         String packageSha256,
         URI downloadUri) {
 
@@ -47,9 +48,24 @@ public record DirectCefRuntimeReleaseDescriptor(
             throw invalid("packageFileName must be a single safe file name");
         }
         if (packageSize <= 0) throw invalid("packageSize must be positive");
+        if (runtimePayloadSize < 0) throw invalid("runtimePayloadSize must not be negative");
         packageSha256 = required(packageSha256, "packageSha256").toLowerCase(Locale.ROOT);
         if (!packageSha256.matches("[0-9a-f]{64}")) throw invalid("packageSha256 must be 64 hexadecimal characters");
         if (downloadUri != null) validateUri(downloadUri);
+    }
+
+    /**
+     * Compatibility constructor for Phase C descriptors created before the
+     * optional unpacked payload size was introduced. A zero payload size is
+     * accepted and causes the downloader to use a conservative package-size
+     * fallback for its advisory disk-space estimate.
+     */
+    public DirectCefRuntimeReleaseDescriptor(int descriptorVersion, String artifactId,
+                                             DirectCefRuntimeRequirement requirement,
+                                             String artifactRevision, String packageFileName,
+                                             long packageSize, String packageSha256, URI downloadUri) {
+        this(descriptorVersion, artifactId, requirement, artifactRevision, packageFileName,
+                packageSize, 0L, packageSha256, downloadUri);
     }
 
     public boolean sourceConfigured() { return downloadUri != null; }
@@ -81,12 +97,13 @@ public record DirectCefRuntimeReleaseDescriptor(
             String revision = string(root, "artifactRevision");
             String fileName = string(root, "packageFileName", "fileName");
             long size = longValue(root, "packageSize", "size");
+            long payloadSize = optionalLongValue(root, "runtimePayloadSize", "unpackedSize");
             String sha = string(root, "packageSha256", "sha256");
             String uriText = optionalString(root, "downloadUri");
             URI uri = uriText == null || uriText.isBlank() ? null : URI.create(uriText);
             DirectCefRuntimeRequirement req = parseRequirement(root);
             return new DirectCefRuntimeReleaseDescriptor(version, artifactId, req, revision,
-                    fileName, size, sha, uri);
+                    fileName, size, payloadSize, sha, uri);
         } catch (DirectCefRuntimeException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -159,6 +176,16 @@ public record DirectCefRuntimeReleaseDescriptor(
             if (value instanceof Long number) return number;
         }
         throw invalid("descriptor is missing '" + names[0] + "'");
+    }
+
+    private static long optionalLongValue(Map<String, Object> object, String... names) {
+        for (String name : names) {
+            Object value = object.get(name);
+            if (value == null) continue;
+            if (value instanceof Long number) return number;
+            throw invalid("descriptor field '" + name + "' must be an integer");
+        }
+        return 0L;
     }
 
     /** Small strict JSON parser copied in spirit from runtime.json parser; no new dependency. */

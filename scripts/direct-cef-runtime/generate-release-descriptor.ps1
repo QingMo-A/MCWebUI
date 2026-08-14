@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)]
     [string]$PackagePath,
     [Parameter(Mandatory)]
-    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')]
     [string]$ArtifactRevision,
     [string]$ArtifactId = '',
     [string]$DownloadUri = '',
@@ -117,8 +117,8 @@ try {
 if ([string]::IsNullOrWhiteSpace($ArtifactId)) {
     $ArtifactId = "mcwebui-direct-cef-$($manifest.runtimeId)-$($manifest.platform)-$($manifest.arch)-$ArtifactRevision"
 }
-if ($ArtifactId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
-    throw 'ArtifactId must contain only letters, digits, dot, underscore, and hyphen'
+if ($ArtifactId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$') {
+    throw 'ArtifactId must be 1-128 safe letters, digits, dot, underscore, and hyphen characters'
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
@@ -135,6 +135,7 @@ $descriptor = [ordered]@{
     artifactRevision = $ArtifactRevision
     packageFileName = $packageItem.Name
     packageSize = [int64]$packageItem.Length
+    runtimePayloadSize = [int64](@($manifest.files) | Measure-Object -Property size -Sum).Sum
     packageSha256 = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToUpperInvariant()
     runtime = [ordered]@{
         schemaVersion = [int]$manifest.schemaVersion
@@ -159,5 +160,6 @@ Write-Output "descriptor: $output"
 Write-Output "artifactId: $ArtifactId"
 Write-Output "artifactRevision: $ArtifactRevision"
 Write-Output "packageSize: $($packageItem.Length)"
+Write-Output "runtimePayloadSize: $($descriptor.runtimePayloadSize)"
 Write-Output "packageSha256: $($descriptor.packageSha256)"
 Write-Output "downloadConfigured: $(-not [string]::IsNullOrWhiteSpace($DownloadUri))"

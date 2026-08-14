@@ -64,7 +64,7 @@ public final class DirectCefRuntimeDownloader {
                         "Unable to create runtime download staging directory", ex, downloadDirectory);
             }
             part = downloadDirectory.resolve(descriptor.artifactId() + "." + java.util.UUID.randomUUID() + ".part");
-            checkDiskSpace(downloadDirectory, descriptor.packageSize());
+            checkDiskSpace(downloadDirectory, descriptor.packageSize(), descriptor.runtimePayloadSize());
             sink.onProgress(RuntimeDownloadProgress.simple(RuntimeDownloadProgress.Phase.CONNECTING,
                     "Connecting to runtime download", descriptor.packageSize()));
             long downloaded = writeDownload(descriptor, part, sink, cancel);
@@ -203,15 +203,30 @@ public final class DirectCefRuntimeDownloader {
         }
     }
 
-    private static void checkDiskSpace(Path directory, long packageSize) {
+    static long requiredFreshInstallBytes(long packageSize, long runtimePayloadSize) {
+        if (packageSize <= 0 || runtimePayloadSize < 0) {
+            throw failure(DirectCefRuntimeFailureReason.INSUFFICIENT_DISK_SPACE,
+                    "Runtime package size information is invalid", null);
+        }
+        // Older descriptor v1 files do not have runtimePayloadSize. Keep them
+        // readable, but reserve one additional package-size as a conservative
+        // extraction estimate instead of returning to the old ZIP-only model.
+        long unpacked = runtimePayloadSize > 0 ? runtimePayloadSize : packageSize;
         try {
-            FileStore store = Files.getFileStore(directory);
-            long needed = Math.addExact(packageSize, STAGING_MARGIN_BYTES);
-            if (store.getUsableSpace() < needed) throw failure(DirectCefRuntimeFailureReason.INSUFFICIENT_DISK_SPACE,
-                    "Insufficient disk space for runtime package staging", directory);
+            return Math.addExact(Math.addExact(packageSize, unpacked), STAGING_MARGIN_BYTES);
         } catch (ArithmeticException ex) {
             throw failure(DirectCefRuntimeFailureReason.INSUFFICIENT_DISK_SPACE,
-                    "Runtime package size is too large", ex, directory);
+                    "Runtime package size is too large", ex, null);
+        }
+    }
+
+    private static void checkDiskSpace(Path directory, long packageSize, long runtimePayloadSize) {
+        try {
+            FileStore store = Files.getFileStore(directory);
+            long needed = requiredFreshInstallBytes(packageSize, runtimePayloadSize);
+            if (store.getUsableSpace() < needed) throw failure(DirectCefRuntimeFailureReason.INSUFFICIENT_DISK_SPACE,
+                    "Insufficient disk space for the runtime ZIP, extracted staging, and safety margin"
+                            + " (required " + needed + " bytes)", directory);
         } catch (IOException ignored) {
             // Some virtual/launcher filesystems cannot report usable space.
             // This gate is advisory; exact bounded writes still remain authoritative.
