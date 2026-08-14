@@ -197,18 +197,28 @@ Important review findings at this checkpoint:
     asynchronous accelerated D3D mailbox, while the target-local surface
     contract exposes `beginRenderFrame`/`textureId`/`endRenderFrame`,
     `PREMULTIPLIED` alpha, and `yFlipped` for the Minecraft render thread.
-    Bridge/WebBridge and production packaging remain NOT IMPLEMENTED; the
-    proof URL is local HTTP and the helper path is explicit.
+    The renderer/browser message routers and Java DirectBridgeHost now carry
+    the real bridge; production native packaging remains NOT IMPLEMENTED.
+    A process-owned loopback server serves bundled resources on an ephemeral
+    port and random path, while the helper path remains explicit.
+
+    The retained Direct session is now prewarmed on the Minecraft client/render
+    tick: before F8 it loads the real Vue page, completes the Java bridge
+    handshake, and obtains the first accelerated texture without taking focus.
+    This moved the observed first-F8 freeze into the normal loading phase without
+    violating CEF/WGL thread ownership. Direct external BeginFrame requests are
+    fractionally capped at configured 60/120/144 Hz, so a 180 Hz host render loop
+    no longer implies 180 browser requests; game signals, rAF, accelerated
+    generations and presents are explicitly different measurements.
 
     Native CEF144 lifecycle smoke, Java/NeoForge tests, frontend/all-target
-    builds, and direct class-path startup passed. The bounded run reached the
-    direct backend selection with no MCEF mod, but F8 was observed during the
-    `Minecraft: NeoForge Loading...` title and produced no native diagnostics.
-    Therefore this checkpoint is **VERDICT B**: direct startup and the safe
-    implementation slice are evidenced, while Minecraft F8/native/WGL mailbox
-    rendering, world/alpha visual composition, and scanout remain **READY FOR
-    USER ACCEPTANCE**. Do not call the standalone NVIDIA interop PASS a
-    Minecraft/JNI integration result. See `plans/direct-cef-neoforge-plan.md`.
+    builds, direct class-path startup, bundled Vue loading, renderer bootstrap,
+    CefQuery transport and Java handshake passed. The user also observed the
+    Direct page and input in Minecraft. Therefore this checkpoint remains
+    **VERDICT B** for production: the automated Minecraft fullscreen/WGL
+    matrix and native distribution are still pending. Do not generalize the
+    standalone NVIDIA interop result to other vendors. See
+    `plans/direct-cef-neoforge-plan.md`.
 
 ### Near-term project direction
 

@@ -4,8 +4,8 @@ Status: **VERDICT B / opt-in proof slice** (2026-08-13).
 
 This plan covers only the Windows NeoForge 1.21.1 experimental backend. The
 default `mcef` backend remains unchanged. The Direct CEF path is selected only
-with `mcwebui.browserBackend=direct-cef` and a proof URL; it does not implement
-the production bridge, Minecraft JNI interop, or a packaged native runtime.
+with `mcwebui.browserBackend=direct-cef`; it remains an opt-in Windows proof and
+does not package the native CEF runtime.
 
 ## Boundaries
 
@@ -24,8 +24,10 @@ the production bridge, Minecraft JNI interop, or a packaged native runtime.
   remain behind the proof surface.
 - Resize is deferred while a mailbox slot is registered/locked; the producer
   never releases a registered resource from its callback.
-- Bridge/WebBridge transport is **NOT IMPLEMENTED** on this path. The proof
-  URL is ordinary local HTTP (`mcwebui.directCef.url`), not `mcui://`.
+- Direct CEF carries the WebBridge JSON envelopes through CEF message routers.
+  By default a process-owned loopback server exposes only the bundled
+  `web/playground` resources under an ephemeral port and random capability
+  path. `mcwebui.directCef.url` remains an explicit external test override.
 
 ## Class-path isolation
 
@@ -48,10 +50,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
   -DurationMs 90000 -AutoOpen -TargetHz 60
 ```
 
-The runner starts a local HTTP server, builds the frontend/native artifacts,
-passes the DLL/helper/cache paths to Gradle, waits for a non-`Loading` Minecraft
-window before posting F8, and performs bounded child-process cleanup. It never
-stages `web/`, SDKs, caches, binaries, or result logs.
+The runner builds the frontend/native artifacts and normally lets Minecraft
+serve the bundled page. It waits for the ModDev game process and sound-engine
+readiness before starting the requested duration; `DurationMs 0` is a manual
+run that lasts until Minecraft closes. `-ExternalPageServer` retains the old
+Python-server path for isolated diagnostics. Cleanup always tears down the
+game before the optional server. It never stages `web/`, SDKs, caches,
+binaries, or result logs.
 
 ## Evidence
 
@@ -59,16 +64,19 @@ stages `web/`, SDKs, caches, binaries, or result logs.
 | --- | --- | --- |
 | Native CEF144 standalone smoke | PASS | `ready=true`, one accelerated callback and published generation, zero copy/lock failures; `interop=UNSUPPORTED` without a current Minecraft WGL context |
 | Java/NeoForge compile and tests | PASS | 10 target tests; frontend typecheck/build and all-target build pass |
+| Bundled page + real CEF/Java handshake | PASS | Process-owned random loopback URL served the built Vue bundle; renderer bootstrap, CefQuery, and Java WebBridge handshake completed |
 | Direct class-path startup | PASS | Mod List was MCWebUI/Minecraft/NeoForge (MCEF absent); backend selection logged `direct-cef`; NVIDIA GL 4.6 startup reached resource loading |
-| Direct F8/native surface in Minecraft | NOT VERIFIED | The bounded run observed only the loading-window title before watchdog cleanup; no native diagnostics were produced |
+| Direct F8/native surface in Minecraft | USER-VERIFIED / REGRESSION READY | User observed the Direct page and controls in game; automated WGL/fullscreen scanout remains separate |
+| Hidden Direct prewarm | PASS | Bounded client run created the native runtime, loaded Vue, completed the Java bridge handshake and produced the first accelerated texture before F8; F8 reused that retained session |
+| External-frame pacing | PASS | Game render signals remain independent, while Direct BeginFrame requests use a fractional 60/120/144 Hz cap; 180 host signals deterministically produce 60/120/144 requests |
 | Minecraft WGL/D3D/OpenGL mailbox | NOT VERIFIED | Standalone NVIDIA interop proof is separate and must not be called Minecraft integration |
 | Human world/alpha/rounded-corner/scanout acceptance | READY FOR USER ACCEPTANCE | Requires an interactive F8 run after the loading screen is gone |
 
-The direct client run therefore remains **Verdict B**: the opt-in selection,
-class-path isolation, native helper/lifecycle smoke, and Java surface slice are
-implemented, but full Minecraft F8/native/GL evidence is still pending. Do not
-claim production readiness, JNI bridge completion, or a successful visual
-acceptance from this checkpoint.
+The direct client run remains **Verdict B**: opt-in selection, class-path
+isolation, native helper/lifecycle, bundled resource ownership and the real
+Vue/CEF/Java bridge are implemented. Production packaging and a repeatable
+automated Minecraft WGL/fullscreen matrix are still pending; do not infer
+production readiness from this checkpoint.
 
 ## Lifecycle and ownership notes
 
@@ -79,3 +87,12 @@ idempotent and screen close is the only owner of the surface. A future runtime
 integration must add an explicit owner-thread gate and a render-thread
 registration/unregistration handshake before shipping this backend.
 
+Direct prewarm deliberately runs on the normal Minecraft client/render tick;
+moving CEF/WGL initialization to a worker thread would violate that ownership
+contract. It keeps the CEF browser visible internally but the Minecraft view
+hidden and unfocused until an accelerated texture plus bridge handshake exists,
+then calls `WasHidden(true)`. The one-time initialization cost is therefore paid
+during client loading rather than on the first F8. External BeginFrame requests
+use the configured Direct target instead of blindly following a 180+ Hz game
+render clock; the game signal rate, browser rAF callbacks, and newly published
+GPU generations remain separate metrics and must not be labeled as one FPS.
