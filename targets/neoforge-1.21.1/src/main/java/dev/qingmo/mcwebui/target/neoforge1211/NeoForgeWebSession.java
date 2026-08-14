@@ -104,7 +104,7 @@ final class NeoForgeWebSession implements AutoCloseable {
         }
     }
 
-    private static java.nio.file.Path directCefInstanceRoot() {
+    static java.nio.file.Path directCefInstanceRoot() {
         String configured = System.getProperty(DirectCefRuntimeDiscovery.INSTANCE_ROOT_PROPERTY, "").trim();
         if (!configured.isEmpty()) return java.nio.file.Path.of(configured).toAbsolutePath().normalize();
         try {

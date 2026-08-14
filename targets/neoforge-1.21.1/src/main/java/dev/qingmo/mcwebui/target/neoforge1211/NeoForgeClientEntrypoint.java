@@ -2,8 +2,11 @@ package dev.qingmo.mcwebui.target.neoforge1211;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
+import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeDiscovery;
+import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeException;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
@@ -70,30 +73,17 @@ public final class NeoForgeClientEntrypoint {
         }
         boolean clicked = OPEN_DEMO.consumeClick();
         if (direct) {
-            if (clicked && !(MINECRAFT.screen instanceof NeoForgeMinecraftScreen)) {
-                try {
-                    if (directSession == null || directSession.isClosed()) {
-                        NeoForgeWebSession session = new NeoForgeWebSession(BRIDGE.dispatcher, BRIDGE.demo);
-                        session.warmUp(MINECRAFT.getWindow().getGuiScaledWidth(),
-                                MINECRAFT.getWindow().getGuiScaledHeight(),
-                                MINECRAFT.getWindow().getGuiScale());
-                        directSession = session;
-                    }
-                    directSession.activate();
-                    // Keep the process-global CEF runtime alive across ESC. Repeated
-                    // CefInitialize/CefShutdown cycles from Screen removal are unsafe and
-                    // were the source of the libcef fullscreen/ESC crash.
-                    MINECRAFT.setScreen(new NeoForgeMinecraftScreen(directSession));
-                } catch (Throwable failure) {
-                    // Native proof configuration must never tear down the whole client from a
-                    // key event. Direct mode still does not fall back to MCEF; it reports the
-                    // explicit failure and leaves the current Minecraft screen intact.
-                    LOGGER.error("MCWebUI Direct CEF screen failed to open", failure);
-                    if (MINECRAFT.screen instanceof NeoForgeMinecraftScreen) MINECRAFT.setScreen(null);
-                    if (directSession != null) {
-                        directSession.close();
-                        directSession = null;
-                    }
+            if (clicked && !(MINECRAFT.screen instanceof NeoForgeMinecraftScreen)
+                    && !(MINECRAFT.screen instanceof DirectCefRuntimeSetupScreen)) {
+                DirectCefRuntimeDiscovery.Probe probe = probeDirectRuntime();
+                if (probe.valid()) {
+                    openDirectWebScreen();
+                } else {
+                    // A missing/corrupt runtime must open the recovery screen instead of
+                    // silently doing nothing after a stack trace in the log.
+                    LOGGER.warn("MCWebUI Direct CEF runtime is unavailable ({}); opening the runtime setup screen",
+                            probe.failure().reason());
+                    openDirectSetupScreen(probe);
                 }
             }
             return;
@@ -109,6 +99,55 @@ public final class NeoForgeClientEntrypoint {
             warmSession.activate();
             MINECRAFT.setScreen(new NeoForgeMinecraftScreen(warmSession));
         }
+    }
+
+    static void openDirectWebScreen() {
+        try {
+            if (directSession == null || directSession.isClosed()) {
+                NeoForgeWebSession session = new NeoForgeWebSession(BRIDGE.dispatcher, BRIDGE.demo);
+                session.warmUp(MINECRAFT.getWindow().getGuiScaledWidth(),
+                        MINECRAFT.getWindow().getGuiScaledHeight(),
+                        MINECRAFT.getWindow().getGuiScale());
+                directSession = session;
+            }
+            directSession.activate();
+            // Keep the process-global CEF runtime alive across ESC. Repeated
+            // CefInitialize/CefShutdown cycles from Screen removal are unsafe and
+            // were the source of the libcef fullscreen/ESC crash.
+            MINECRAFT.setScreen(new NeoForgeMinecraftScreen(directSession));
+        } catch (Throwable failure) {
+            // Native proof configuration must never tear down the whole client from a
+            // key event. Direct mode still does not fall back to MCEF; it reports the
+            // explicit failure and leaves the current Minecraft screen intact.
+            LOGGER.error("MCWebUI Direct CEF screen failed to open", failure);
+            if (MINECRAFT.screen instanceof NeoForgeMinecraftScreen) MINECRAFT.setScreen(null);
+            if (directSession != null) {
+                directSession.close();
+                directSession = null;
+            }
+            if (failure instanceof DirectCefRuntimeException runtimeFailure) {
+                // A runtime problem surfaced during open: route the player to setup
+                // instead of leaving F8 dead.
+                DirectCefRuntimeDiscovery.Probe probe = probeDirectRuntime();
+                if (!probe.valid()) {
+                    LOGGER.warn("MCWebUI Direct CEF runtime is unavailable ({}); opening the runtime setup screen",
+                            probe.failure().reason());
+                    openDirectSetupScreen(probe);
+                }
+            }
+        }
+    }
+
+    static DirectCefRuntimeDiscovery.Probe probeDirectRuntime() {
+        String runtimeOverride = System.getProperty(DirectCefRuntimeDiscovery.RUNTIME_OVERRIDE_PROPERTY, "").trim();
+        return DirectCefRuntimeDiscovery.probe(NeoForgeWebSession.directCefInstanceRoot(),
+                runtimeOverride.isEmpty() ? null : java.nio.file.Path.of(runtimeOverride));
+    }
+
+    private static void openDirectSetupScreen(DirectCefRuntimeDiscovery.Probe probe) {
+        Screen previous = MINECRAFT.screen;
+        MINECRAFT.setScreen(new DirectCefRuntimeSetupScreen(NeoForgeWebSession.directCefInstanceRoot(),
+                probe, previous, NeoForgeClientEntrypoint::openDirectWebScreen));
     }
 
     private static void ensureDirectWarmSession() {
