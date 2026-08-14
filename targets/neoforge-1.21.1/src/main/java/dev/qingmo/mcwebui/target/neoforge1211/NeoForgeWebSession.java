@@ -66,8 +66,8 @@ final class NeoForgeWebSession implements AutoCloseable {
     }
 
     private BrowserBackend createBackend() {
-        String selected = normalizeBackendSelection(System.getProperty("mcwebui.browserBackend", "mcef"));
-        backendName = selected.isEmpty() ? "mcef" : selected;
+        String selected = NeoForgeClientEntrypoint.directCefSelected() ? "direct-cef" : "mcef";
+        backendName = selected;
         if (selected.isEmpty() || selected.equals("mcef")) return new NeoForgeMcefBackend();
         if (!selected.equals("direct-cef")) throw new IllegalStateException("Unknown MCWebUI browser backend: " + selected);
         // The URL override belongs to the built-in proof runner. Consumer apps always

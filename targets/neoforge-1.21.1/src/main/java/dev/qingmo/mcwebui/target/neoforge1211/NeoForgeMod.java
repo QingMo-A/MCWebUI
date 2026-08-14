@@ -23,6 +23,7 @@ public final class NeoForgeMod {
     static final class ClientConfig {
         private final ModConfigSpec spec;
         private final ModConfigSpec.BooleanValue followGuiSize;
+        private final ModConfigSpec.EnumValue<BrowserBackendPreference> browserBackend;
 
         private ClientConfig() {
             ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -31,9 +32,16 @@ public final class NeoForgeMod {
                             "Disable to preserve GUI-scale-1 CSS density with framebuffer-equivalent pixels.")
                     .translation("mcwebui.config.followGuiSize")
                     .define("followGuiSize", true);
+            browserBackend = builder
+                    .comment("Browser backend used by MCWebUI.",
+                            "MCEF preserves the historical default; AUTO prefers installed MCEF then Direct CEF.",
+                            "The -Dmcwebui.browserBackend JVM property overrides this value for developer runs.")
+                    .translation("mcwebui.config.browserBackend")
+                    .defineEnum("browserBackend", BrowserBackendPreference.MCEF);
             spec = builder.build();
         }
 
         boolean followGuiSize() { return followGuiSize.get(); }
+        BrowserBackendPreference browserBackend() { return browserBackend.get(); }
     }
 }

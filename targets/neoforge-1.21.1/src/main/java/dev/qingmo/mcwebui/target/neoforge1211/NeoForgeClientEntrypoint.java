@@ -7,6 +7,8 @@ import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeException;
 import dev.qingmo.mcwebui.api.WebAppDefinition;
 import dev.qingmo.mcwebui.api.WebAppId;
 import dev.qingmo.mcwebui.api.WebAppRegistry;
+import dev.qingmo.mcwebui.api.neoforge.MCWebUIBackendStatus;
+import dev.qingmo.mcwebui.api.neoforge.MCWebUIEnvironment;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -15,6 +17,8 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 
@@ -26,6 +30,11 @@ public final class NeoForgeClientEntrypoint {
     public static final KeyMapping OPEN_DEMO = new KeyMapping("Open MCWebUI Runtime Demo",
             InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, "key.categories.misc");
     private static volatile boolean backendReady;
+    private static volatile NeoForgeBackendSelection.Resolution backendResolution =
+            new NeoForgeBackendSelection.Resolution(BrowserBackendPreference.MCEF,
+                    ResolvedBrowserBackend.NONE, BackendAvailability.INITIALIZATION_FAILED,
+                    "Backend selection has not been initialized.");
+    private static volatile String backendFailure = "";
     private static NeoForgeWebSession warmSession;
     private static NeoForgeWebSession directSession;
     private static boolean warmFrameLogged;
@@ -38,10 +47,24 @@ public final class NeoForgeClientEntrypoint {
     private NeoForgeClientEntrypoint() { }
 
     public static void init(IEventBus modEventBus) {
-        LOGGER.info("MCWebUI browser backend selection={}", System.getProperty("mcwebui.browserBackend", "mcef"));
         modEventBus.addListener(NeoForgeClientEntrypoint::registerKeys);
+        modEventBus.addListener(NeoForgeClientEntrypoint::clientSetup);
         NeoForge.EVENT_BUS.addListener(NeoForgeClientEntrypoint::tick);
         NeoForge.EVENT_BUS.addListener(NeoForgeClientEntrypoint::shutdown);
+    }
+
+    private static void clientSetup(FMLClientSetupEvent event) {
+        // Client config values are loaded by this lifecycle point. Resolving in the
+        // mod constructor would silently use defaults and could bootstrap the wrong CEF.
+        event.enqueueWork(NeoForgeClientEntrypoint::initializeSelectedBackend);
+    }
+
+    private static void initializeSelectedBackend() {
+        resolveBackendSelection();
+        LOGGER.info("MCWebUI browser preference={} resolved={} availability={}",
+                backendResolution.preference().externalName(), backendResolution.backend().externalName(),
+                backendResolution.availability());
+        if (backendResolution.availability() != BackendAvailability.AVAILABLE) return;
         if (directCefSelected()) {
             // Direct CEF is intentionally independent from MCEF initialization.  The
             // explicit opt-in owns its native runtime and must still make F8 available
@@ -52,12 +75,48 @@ public final class NeoForgeClientEntrypoint {
         NeoForgeMcefBootstrap.init();
     }
 
-    static void markBackendReady(boolean ready) { backendReady = ready; }
+    static void markBackendReady(boolean ready) {
+        backendReady = ready;
+        if (ready) {
+            backendFailure = "";
+            backendResolution = new NeoForgeBackendSelection.Resolution(backendResolution.preference(),
+                    ResolvedBrowserBackend.MCEF, BackendAvailability.AVAILABLE, "");
+        } else {
+            backendFailure = "CinemaMod MCEF initialization failed. Check the client log and retry.";
+            backendResolution = new NeoForgeBackendSelection.Resolution(backendResolution.preference(),
+                    ResolvedBrowserBackend.MCEF, BackendAvailability.INITIALIZATION_FAILED, backendFailure);
+        }
+    }
+
+    private static void resolveBackendSelection() {
+        backendReady = false;
+        String property = System.getProperty("mcwebui.browserBackend");
+        try {
+            BrowserBackendPreference preference = NeoForgeBackendSelection.preference(property,
+                    NeoForgeMod.CLIENT_CONFIG.browserBackend());
+            backendResolution = NeoForgeBackendSelection.resolve(preference,
+                    ModList.get().isLoaded("mcef"), isWindows());
+            backendFailure = backendResolution.reason();
+        } catch (RuntimeException invalid) {
+            String value = property == null ? String.valueOf(NeoForgeMod.CLIENT_CONFIG.browserBackend()) : property;
+            backendFailure = "Invalid browser backend preference: " + value;
+            backendResolution = new NeoForgeBackendSelection.Resolution(BrowserBackendPreference.MCEF,
+                    ResolvedBrowserBackend.NONE, BackendAvailability.INITIALIZATION_FAILED, backendFailure);
+        }
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+    }
 
     private static void registerKeys(RegisterKeyMappingsEvent event) { event.register(OPEN_DEMO); }
 
     private static void tick(ClientTickEvent.Post event) {
-        if (!backendReady) return;
+        boolean clicked = OPEN_DEMO.consumeClick();
+        if (!backendReady) {
+            if (clicked) openUnavailableScreen();
+            return;
+        }
         boolean direct = directCefSelected();
         if (direct) ensureDirectWarmSession();
         if (directSession != null && !directSession.isClosed()) {
@@ -84,18 +143,19 @@ public final class NeoForgeClientEntrypoint {
             warmFrameLogged = true;
             LOGGER.info("MCWebUI MCEF warm session produced its first renderable frame");
         }
-        boolean clicked = OPEN_DEMO.consumeClick();
         if (direct) {
             if (clicked && !(MINECRAFT.screen instanceof NeoForgeMinecraftScreen)
                     && !(MINECRAFT.screen instanceof DirectCefRuntimeSetupScreen)) {
                 DirectCefRuntimeDiscovery.Probe probe = probeDirectRuntime();
                 if (probe.valid()) {
+                    markDirectRuntimeAvailable();
                     openDirectWebScreen();
                 } else {
                     // A missing/corrupt runtime must open the recovery screen instead of
                     // silently doing nothing after a stack trace in the log.
                     LOGGER.warn("MCWebUI Direct CEF runtime is unavailable ({}); opening the runtime setup screen",
                             probe.failure().reason());
+                    markDirectRuntimeMissing(probe);
                     openDirectSetupScreen(probe);
                 }
             }
@@ -134,6 +194,10 @@ public final class NeoForgeClientEntrypoint {
             // key event. Direct mode still does not fall back to MCEF; it reports the
             // explicit failure and leaves the current Minecraft screen intact.
             LOGGER.error("MCWebUI Direct CEF screen failed to open", failure);
+            backendFailure = "Direct CEF initialization failed: " + failure.getClass().getSimpleName()
+                    + (failure.getMessage() == null ? "" : " - " + failure.getMessage());
+            backendResolution = new NeoForgeBackendSelection.Resolution(backendResolution.preference(),
+                    ResolvedBrowserBackend.DIRECT_CEF, BackendAvailability.INITIALIZATION_FAILED, backendFailure);
             if (MINECRAFT.screen instanceof NeoForgeMinecraftScreen) MINECRAFT.setScreen(null);
             if (directSession != null) {
                 directSession.close();
@@ -147,7 +211,11 @@ public final class NeoForgeClientEntrypoint {
                     LOGGER.warn("MCWebUI Direct CEF runtime is unavailable ({}); opening the runtime setup screen",
                             probe.failure().reason());
                     openDirectSetupScreen(probe);
+                } else {
+                    MINECRAFT.setScreen(unavailableScreen(MINECRAFT.screen));
                 }
+            } else {
+                MINECRAFT.setScreen(unavailableScreen(MINECRAFT.screen));
             }
         }
     }
@@ -158,17 +226,18 @@ public final class NeoForgeClientEntrypoint {
             throw new IllegalStateException("createScreen must be called on the Minecraft client thread; use open instead");
         }
         WebAppDefinition definition = WebAppRegistry.process().require(id);
-        if (!directCefSelected() && !backendReady) {
-            throw new IllegalStateException("The selected MCEF backend is not ready");
-        }
+        if (!backendReady) return unavailableScreen(MINECRAFT.screen);
         if (directCefSelected()) {
             DirectCefRuntimeDiscovery.Probe probe = probeDirectRuntime();
             if (!probe.valid()) {
+                markDirectRuntimeMissing(probe);
                 PENDING_PUBLIC_APP.save(id);
                 Screen previous = MINECRAFT.screen;
                 return new DirectCefRuntimeSetupScreen(NeoForgeWebSession.directCefInstanceRoot(),
-                        probe, previous, NeoForgeClientEntrypoint::continuePendingPublicApp);
+                        probe, previous, NeoForgeClientEntrypoint::continuePendingPublicApp,
+                        PENDING_PUBLIC_APP::clear);
             }
+            markDirectRuntimeAvailable();
             // One Direct CEF owner is permitted in the preview. Do not leave the F8
             // playground alive when a consumer app takes ownership of the runtime.
             if (directSession != null) {
@@ -203,6 +272,34 @@ public final class NeoForgeClientEntrypoint {
         if (requested != null) openRegisteredWebApp(requested);
     }
 
+    private static Screen unavailableScreen(Screen previous) {
+        String reason = backendFailure.isBlank() ? backendResolution.reason() : backendFailure;
+        return new MCWebUIBackendUnavailableScreen(previous, backendResolution.backend().externalName(),
+                reason.isBlank() ? "The selected backend is not ready." : reason, () -> {
+            resolveBackendSelection();
+            if (backendResolution.availability() == BackendAvailability.AVAILABLE) {
+                if (backendResolution.backend() == ResolvedBrowserBackend.DIRECT_CEF) backendReady = true;
+                else NeoForgeMcefBootstrap.init();
+            }
+            if (backendReady) MINECRAFT.setScreen(previous);
+            else MINECRAFT.setScreen(unavailableScreen(previous));
+        });
+    }
+
+    private static void openUnavailableScreen() { MINECRAFT.setScreen(unavailableScreen(MINECRAFT.screen)); }
+
+    public static MCWebUIBackendStatus backendStatus() {
+        return new MCWebUIBackendStatus(backendResolution.preference().externalName(),
+                backendResolution.backend().externalName(), backendResolution.availability().name(),
+                backendFailure.isBlank() ? backendResolution.reason() : backendFailure);
+    }
+
+    public static MCWebUIEnvironment environment() {
+        String os = System.getProperty("os.name", "unknown");
+        return new MCWebUIEnvironment("neoforge-1.21.1", "NeoForge", "1.21.1",
+                Runtime.version().feature(), os, isWindows(), ModList.get().isLoaded("mcef"));
+    }
+
     private static void closePublicSession() {
         if (publicSession != null) {
             publicSession.close();
@@ -220,6 +317,19 @@ public final class NeoForgeClientEntrypoint {
         Screen previous = MINECRAFT.screen;
         MINECRAFT.setScreen(new DirectCefRuntimeSetupScreen(NeoForgeWebSession.directCefInstanceRoot(),
                 probe, previous, NeoForgeClientEntrypoint::openDirectWebScreen));
+    }
+
+    private static void markDirectRuntimeMissing(DirectCefRuntimeDiscovery.Probe probe) {
+        backendFailure = probe.failure() == null ? "Direct CEF runtime is missing or invalid."
+                : probe.failure().getMessage();
+        backendResolution = new NeoForgeBackendSelection.Resolution(backendResolution.preference(),
+                ResolvedBrowserBackend.DIRECT_CEF, BackendAvailability.RUNTIME_MISSING, backendFailure);
+    }
+
+    private static void markDirectRuntimeAvailable() {
+        backendFailure = "";
+        backendResolution = new NeoForgeBackendSelection.Resolution(backendResolution.preference(),
+                ResolvedBrowserBackend.DIRECT_CEF, BackendAvailability.AVAILABLE, "");
     }
 
     private static void ensureDirectWarmSession() {
@@ -283,7 +393,7 @@ public final class NeoForgeClientEntrypoint {
     }
 
     static boolean directCefSelected() {
-        return directCefSelected(System.getProperty("mcwebui.browserBackend", "mcef"));
+        return backendResolution.backend() == ResolvedBrowserBackend.DIRECT_CEF;
     }
 
     static boolean directCefSelected(String selection) {

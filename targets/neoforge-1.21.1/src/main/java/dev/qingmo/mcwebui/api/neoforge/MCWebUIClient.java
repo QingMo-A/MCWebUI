@@ -19,4 +19,12 @@ public final class MCWebUIClient {
     public static Screen createScreen(String id) { return NeoForgeWebScreens.createScreen(id); }
     public static void open(WebAppId id) { NeoForgeWebScreens.open(id); }
     public static void open(String id) { NeoForgeWebScreens.open(id); }
+
+    public static MCWebUIBackendStatus backendStatus() {
+        return dev.qingmo.mcwebui.target.neoforge1211.NeoForgeClientEntrypoint.backendStatus();
+    }
+
+    public static MCWebUIEnvironment environment() {
+        return dev.qingmo.mcwebui.target.neoforge1211.NeoForgeClientEntrypoint.environment();
+    }
 }

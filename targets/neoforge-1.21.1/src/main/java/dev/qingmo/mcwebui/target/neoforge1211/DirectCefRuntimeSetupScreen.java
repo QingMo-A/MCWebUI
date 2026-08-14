@@ -50,6 +50,7 @@ public final class DirectCefRuntimeSetupScreen extends Screen {
     private final Path expectedDirectory;
     private final Screen previousScreen;
     private final Runnable onContinue;
+    private final Runnable onAbandon;
     private final ExecutorService importExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "MCWebUI Direct CEF Runtime Import");
         thread.setDaemon(true);
@@ -81,7 +82,13 @@ public final class DirectCefRuntimeSetupScreen extends Screen {
         // anchor. A malformed bundled resource is reported clearly and does
         // not prevent this recovery screen from offering offline import.
         this(instanceRoot, probe, previousScreen, onContinue, bundledReleaseDescriptor(),
-                new DirectCefRuntimeDownloader());
+                new DirectCefRuntimeDownloader(), () -> { });
+    }
+
+    DirectCefRuntimeSetupScreen(Path instanceRoot, DirectCefRuntimeDiscovery.Probe probe,
+                                Screen previousScreen, Runnable onContinue, Runnable onAbandon) {
+        this(instanceRoot, probe, previousScreen, onContinue, bundledReleaseDescriptor(),
+                new DirectCefRuntimeDownloader(), onAbandon);
     }
 
     private static DirectCefRuntimeReleaseDescriptor bundledReleaseDescriptor() {
@@ -99,12 +106,20 @@ public final class DirectCefRuntimeSetupScreen extends Screen {
                                        Screen previousScreen, Runnable onContinue,
                                        DirectCefRuntimeReleaseDescriptor releaseDescriptor,
                                        DirectCefRuntimeDownloader downloader) {
+        this(instanceRoot, probe, previousScreen, onContinue, releaseDescriptor, downloader, () -> { });
+    }
+
+    DirectCefRuntimeSetupScreen(Path instanceRoot, DirectCefRuntimeDiscovery.Probe probe,
+                                Screen previousScreen, Runnable onContinue,
+                                DirectCefRuntimeReleaseDescriptor releaseDescriptor,
+                                DirectCefRuntimeDownloader downloader, Runnable onAbandon) {
         super(Component.literal("MCWebUI Browser Runtime Required"));
         this.instanceRoot = Objects.requireNonNull(instanceRoot, "instanceRoot").toAbsolutePath().normalize();
         this.requirement = DirectCefRuntimeRequirement.required();
         this.expectedDirectory = DirectCefRuntimeDiscovery.standardDirectory(this.instanceRoot, requirement);
         this.previousScreen = previousScreen;
         this.onContinue = Objects.requireNonNull(onContinue, "onContinue");
+        this.onAbandon = Objects.requireNonNull(onAbandon, "onAbandon");
         this.releaseDescriptor = releaseDescriptor;
         this.downloader = Objects.requireNonNull(downloader, "downloader");
         this.overrideConfigured = configuredOverride() != null;
@@ -338,6 +353,7 @@ public final class DirectCefRuntimeSetupScreen extends Screen {
             statusMessage = "Cancelling...";
             return;
         }
+        onAbandon.run();
         minecraft.setScreen(previousScreen);
     }
 
@@ -445,6 +461,7 @@ public final class DirectCefRuntimeSetupScreen extends Screen {
     }
 
     @Override public void onClose() {
+        onAbandon.run();
         disposeSetupResources();
         super.onClose();
     }
