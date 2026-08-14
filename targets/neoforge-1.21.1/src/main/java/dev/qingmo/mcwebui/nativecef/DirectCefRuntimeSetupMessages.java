@@ -37,6 +37,21 @@ public final class DirectCefRuntimeSetupMessages {
             case INSTALL_IN_PROGRESS -> "Another process is already installing this runtime.";
             case RUNTIME_IN_USE -> "Runtime is currently in use by another process/session.";
             case INSTALL_CANCELLED -> "Installation was cancelled.";
+            case RELEASE_DESCRIPTOR_INVALID -> "Automatic download metadata is invalid or unavailable.";
+            case DOWNLOAD_INVALID_URI -> "Automatic download is not configured for this build.";
+            case DOWNLOAD_HTTP_ERROR -> "The runtime download server returned an error.";
+            case DOWNLOAD_REDIRECT_REJECTED -> "The runtime download redirect was not secure.";
+            case DOWNLOAD_TIMEOUT -> "The runtime download timed out.";
+            case DOWNLOAD_SIZE_MISMATCH -> "The downloaded runtime size did not match its release metadata.";
+            case DOWNLOAD_HASH_MISMATCH -> "The downloaded runtime checksum did not match its release metadata.";
+            case INSUFFICIENT_DISK_SPACE -> "There is not enough disk space for the runtime download.";
+            case DOWNLOAD_IO_ERROR -> "The runtime download could not be saved.";
+            case DOWNLOAD_DNS_ERROR -> "The runtime download host could not be resolved.";
+            case DOWNLOAD_CONNECT_ERROR -> "The runtime download server could not be reached.";
+            case DOWNLOAD_TLS_ERROR -> "The runtime download TLS connection failed.";
+            case DOWNLOAD_WRITE_ERROR -> "The runtime download could not be written to disk.";
+            case DOWNLOAD_CANCELLED -> "Runtime download was cancelled.";
+            case DOWNLOAD_SOURCE_UNAVAILABLE -> "Automatic download is not configured for this build.";
         };
     }
 
