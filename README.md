@@ -78,6 +78,39 @@ the CEF runtime.
   below the ignored project `.gradle/` directory. A system Node installation is
   only needed when running the optional `npm ...` commands directly.
 
+## NeoForge Developer Preview WebScreen API
+
+Consumer mods can register an immutable, backend-neutral WebApp and open it
+without importing MCEF, CEF, JNI, or rendering implementation classes. The
+preview API version is `1`; its source contract may still change before 1.0.
+
+```java
+import dev.qingmo.mcwebui.api.WebAppDefinition;
+import dev.qingmo.mcwebui.api.WebScreenOptions;
+import dev.qingmo.mcwebui.api.neoforge.MCWebUIClient;
+import dev.qingmo.mcwebui.resource.ClasspathWebResourceProvider;
+
+var app = WebAppDefinition.builder("examplemod:control-panel")
+        .resources(new ClasspathWebResourceProvider(
+                ExampleClient.class.getClassLoader(), "web"))
+        .entry("index.html")
+        .bridge(dispatcher -> dispatcher.register("example.echo", request -> request.payload()))
+        .onBridgeCreated(bridge -> bridge.publishState("example.ready", true))
+        .screenOptions(WebScreenOptions.builder()
+                .pauseGame(false).closeOnEsc(true).transparent(true).build())
+        .build();
+
+MCWebUIClient.register(app);
+MCWebUIClient.open(app.id()); // safe from any thread; scheduled onto the client thread
+```
+
+For `examplemod:control-panel`, resources live under
+`web/examplemod/control-panel/` in the consumer JAR. `createScreen(id)` is also
+available, but must be called on Minecraft's client thread. Explicit Direct CEF
+selection never falls back to MCEF; a missing runtime opens Setup and Continue
+resumes the exact requested WebApp. See
+[`plans/developer-preview-api-plan.md`](plans/developer-preview-api-plan.md).
+
 ## Build and frontend workflow
 
 ```powershell
