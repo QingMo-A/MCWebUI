@@ -81,3 +81,18 @@ after navigation; the headless integration does not claim a Minecraft draw.
   acceptance and production runtime distribution remain separate gates.
 - Forge 1.20.1 receives the common Java API classes but no new public screen
   facade in this checkpoint.
+
+## Deployment hardening checkpoint
+
+The subsequent deployment checkpoint preserves API version 1 while adding a
+persisted NeoForge backend preference (`MCEF`, `DIRECT_CEF`, `AUTO`), explicit
+availability/failure UI, immutable public backend/environment diagnostics, and
+an isolated binary-consumer build. The historical default remains MCEF. Explicit
+selection never silently falls back; AUTO is the only fallback policy.
+
+MCEF is checked through the loader before its isolated bootstrap class is used.
+Its Chromium command line no longer disables web security or enables unused
+Widevine. Direct CEF runtime absence continues to the native Setup screen, whose
+pending registered-app continuation is latest-wins and is cleared by Close,
+Cancel, or ESC. See `plans/developer-preview-deployment-plan.md` for the exact
+deployment and security boundaries.

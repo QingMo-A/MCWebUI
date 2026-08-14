@@ -412,6 +412,30 @@ Important review findings at this checkpoint:
 
 ### Near-term project direction
 
+19. NeoForge Developer Preview deployment is hardened around an explicit
+    backend-resolution gate. Persistent `browserBackend` supports MCEF,
+    DIRECT_CEF and AUTO; the JVM property overrides config, while the historical
+    default remains MCEF. MCEF presence is checked before its isolated bootstrap
+    is invoked. Explicit choices never silently fall back. Missing dependency,
+    unsupported platform, missing Direct runtime and initialization failure route
+    to ordinary Minecraft Setup/recovery screens instead of deferred class-load
+    crashes. `MCWebUIClient.backendStatus()` and `environment()` expose immutable
+    implementation-neutral snapshots.
+
+    MCEF no longer receives `--disable-web-security` or unused Widevine flags.
+    `allowExternalNetwork` is documented honestly as intent metadata, not a
+    Chromium firewall; current views still reject external network mode. Public
+    sessions remain retained across ESC, same-app reopen reuses them, app switch
+    closes the old bridge/backend, and pending Setup continuation is exact,
+    latest-wins, and cleared on abandonment.
+
+    A standalone `samples/neoforge-1.21.1-consumer` build now consumes only an
+    isolated staged NeoForge binary coordinate and exercises the public API with
+    `sample:control-panel`. `verifyConsumerSample` plus architecture and metadata
+    audits prevent accidental project/sourceSet/backend/native coupling. No Maven
+    publication or runtime release is performed. Full details live in
+    `plans/developer-preview-deployment-plan.md`.
+
 Before adding a large component library, finish the real transport and make the playground a **component showcase + integration laboratory**.
 
 The showcase should demonstrate modern, attractive web UI controls while exercising actual framework behavior. Candidate sections include:
