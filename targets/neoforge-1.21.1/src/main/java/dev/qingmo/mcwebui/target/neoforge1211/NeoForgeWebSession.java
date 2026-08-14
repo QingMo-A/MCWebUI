@@ -74,7 +74,8 @@ final class NeoForgeWebSession implements AutoCloseable {
             try {
                 bundledPageServer = BundledWebPageServer.start();
                 url = bundledPageServer.url().toString();
-                System.out.println("[MCWebUI] Direct CEF bundled page server started at " + url);
+                System.out.println("[MCWebUI] Direct CEF bundled page server started on 127.0.0.1:"
+                        + bundledPageServer.port() + " (capability path redacted)");
             } catch (RuntimeException failure) {
                 if (bundledPageServer != null) bundledPageServer.close();
                 bundledPageServer = null;
@@ -192,13 +193,14 @@ final class NeoForgeWebSession implements AutoCloseable {
     }
 
     void deactivate() {
-        if (closed || !initialized || view == null) return;
+        if (closed || !initialized || view == null || (!visible && !prewarming)) return;
         focus(false);
         setSurfaceVisible(false);
         view.setVisible(false);
         visible = false;
         prewarming = false;
         if (directFramePacer != null) directFramePacer.reset();
+        logDirectRuntimeEvidence("hidden");
     }
 
     boolean hasRenderableFrame() {
@@ -237,6 +239,7 @@ final class NeoForgeWebSession implements AutoCloseable {
         prewarming = false;
         setSurfaceVisible(false);
         if (directFramePacer != null) directFramePacer.reset();
+        logDirectRuntimeEvidence("prewarm-complete");
     }
 
     void resize(int guiWidth, int guiHeight, double guiScale) {
@@ -306,6 +309,13 @@ final class NeoForgeWebSession implements AutoCloseable {
 
     private void setSurfaceVisible(boolean visible) {
         if (surface instanceof DirectCefRenderableSurface direct) direct.setVisible(visible);
+    }
+
+    private void logDirectRuntimeEvidence(String checkpoint) {
+        if (surface instanceof DirectCefRenderableSurface direct) {
+            System.out.println("[MCWebUI] Direct CEF runtime evidence checkpoint=" + checkpoint
+                    + " diagnostics=" + direct.runtimeDiagnosticsJson());
+        }
     }
 
     private Map<String, Object> diagnostics() {
@@ -385,6 +395,7 @@ final class NeoForgeWebSession implements AutoCloseable {
         if (view != null) view.setVisible(false);
         visible = false;
         prewarming = false;
+        logDirectRuntimeEvidence("shutdown");
         if (surface != null) surface.close();
         if (view != null) {
             demo.removeBridge(view.bridge());

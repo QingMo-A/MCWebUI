@@ -12,7 +12,8 @@ param(
     [string]$LogPath = (Join-Path $env:TEMP 'mcwebui-direct-cef-neoforge-run.log'),
     [switch]$SkipBuild,
     [switch]$DirectOnly,
-    [switch]$AutoOpen
+    [switch]$AutoOpen,
+    [switch]$CollectEvidence
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,6 +50,8 @@ $server = $null
 $client = $null
 $wrapperPid = $null
 $gamePid = $null
+$errorLog = "$LogPath.err"
+$metaLog = "$LogPath.meta"
 $baselineGamePids = @(
     Get-CimInstance Win32_Process -Filter "Name='java.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like '*net.neoforged.devlaunch.Main*' } |
@@ -90,6 +93,69 @@ function Stop-RunnerProcesses {
     throw "Direct CEF NeoForge run left a Java process after cleanup: $($remaining.ProcessId -join ',')"
 }
 
+function Write-RunnerEvidence {
+    if (-not $CollectEvidence) { return }
+    $allLines = @()
+    foreach ($path in @($LogPath, $errorLog)) {
+        if (Test-Path -LiteralPath $path) { $allLines += @(Get-Content -LiteralPath $path -ErrorAction SilentlyContinue) }
+    }
+    $snapshots = @()
+    $latest = $null
+    foreach ($line in $allLines) {
+        if ($line -match '\[MCWebUI\] Direct CEF runtime evidence checkpoint=([^ ]+) diagnostics=(\{.*\})') {
+            $snapshot = [ordered]@{
+                checkpoint = $Matches[1]
+                diagnosticsJson = $Matches[2]
+            }
+            try {
+                $latest = $Matches[2] | ConvertFrom-Json
+            } catch {
+                $snapshot.parseError = $_.Exception.Message
+            }
+            $snapshots += [pscustomobject]$snapshot
+        }
+    }
+    # Match only the one-line native markers. Diagnostics JSON also contains
+    # checkpoint key names and must not be copied back into this compact list.
+    $markers = @($allLines | ForEach-Object {
+        if ($_ -match '(DIRECT_CEF_MC_(?:GL_CONTEXT_READY|INTEROP_READY|MAILBOX_REGISTERED|FIRST_LEASE|FIRST_DRAW)(?: .*)?)$') {
+            $Matches[1]
+        }
+    } | Select-Object -Unique)
+    $hasCounters = $null -ne $latest -and
+        $null -ne $latest.renderBeginSuccesses -and $null -ne $latest.renderEnds -and
+        $null -ne $latest.interopLocks -and $null -ne $latest.interopUnlocks
+    $leaseBalanced = $hasCounters -and ([uint64]$latest.renderBeginSuccesses -eq [uint64]$latest.renderEnds)
+    $interopBalanced = $hasCounters -and ([uint64]$latest.interopLocks -eq [uint64]$latest.interopUnlocks)
+    $failuresZero = $hasCounters -and
+        ([uint64]$latest.interopLockFailures -eq 0) -and
+        ([uint64]$latest.interopUnlockFailures -eq 0) -and
+        ([uint64]$latest.registrationFailures -eq 0)
+    $firstDraw = [bool]($markers | Where-Object { $_ -match 'FIRST_DRAW' })
+    $invariantsPass = $leaseBalanced -and $interopBalanced -and $failuresZero
+    $status = if ($invariantsPass -and $firstDraw) { 'PASS' } else { 'USER_ACTION_REQUIRED' }
+    $evidence = [ordered]@{
+        schemaVersion = 1
+        status = $status
+        logPath = $LogPath
+        targetHz = $TargetHz
+        durationMs = $DurationMs
+        runtimeSnapshots = $snapshots
+        renderMarkers = $markers
+        invariants = [ordered]@{
+            countersPresent = $hasCounters
+            renderLeaseBalanced = $leaseBalanced
+            interopBalanced = $interopBalanced
+            failuresZero = $failuresZero
+            passed = $invariantsPass
+        }
+        manualAcceptanceStillRequired = (-not $firstDraw)
+    }
+    $evidencePath = "$LogPath.evidence.json"
+    $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $evidencePath -Encoding UTF8
+    Write-Host "MCWebUI Direct CEF evidence: $evidencePath ($status)"
+}
+
 try {
     $url = $null
     if ($ExternalPageServer) {
@@ -120,8 +186,6 @@ try {
     # outer watchdog; the user can still close F8 with Escape during the run.
     $gradle = Join-Path $repo 'gradlew.bat'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
-    $errorLog = "$LogPath.err"
-    $metaLog = "$LogPath.meta"
     Remove-Item -LiteralPath $LogPath,$errorLog -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $metaLog -Force -ErrorAction SilentlyContinue
     $client = Start-Process -FilePath $gradle -ArgumentList (@(':targets:neoforge-1.21.1:runClient') + $common) -WorkingDirectory $repo -PassThru -WindowStyle Normal -RedirectStandardOutput $LogPath -RedirectStandardError $errorLog
@@ -191,6 +255,15 @@ namespace McWebUi { public static class WindowInput {
     } else {
         "MCWebUI direct runner bounded session started durationMs=$DurationMs"
     })
+    if ($DurationMs -eq 0) {
+        Write-Host 'MCWebUI Direct CEF manual acceptance:'
+        Write-Host '  1. Enter any Minecraft world.'
+        Write-Host '  2. Press F8.'
+        Write-Host '  3. Set WebScreen opacity to 50% and confirm the world remains visible.'
+        Write-Host '  4. Drag the range slider, scroll the list, and type text.'
+        Write-Host '  5. Press ESC, reopen with F8, then switch fullscreen/windowed once.'
+        Write-Host '  6. Close Minecraft when finished; the runner will collect available evidence.'
+    }
     $deadline = if ($DurationMs -eq 0) { [DateTime]::MaxValue } else { [DateTime]::UtcNow.AddMilliseconds($DurationMs) }
     while ([DateTime]::UtcNow -lt $deadline) {
         if (-not (Get-Process -Id $gamePid -ErrorAction SilentlyContinue)) { break }
@@ -202,8 +275,19 @@ namespace McWebUi { public static class WindowInput {
     }
 } finally {
     try {
+        Add-Content -LiteralPath $metaLog -Value 'MCWebUI direct runner cleanup begin'
         Stop-RunnerProcesses
+        Add-Content -LiteralPath $metaLog -Value 'MCWebUI direct runner process cleanup complete'
     } finally {
         if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+        if ($wrapperPid -and (Get-Process -Id $wrapperPid -ErrorAction SilentlyContinue)) {
+            try { Wait-Process -Id $wrapperPid -Timeout 5 -ErrorAction Stop } catch { }
+        }
+        # Evidence uses the completed runtime checkpoints and must not depend on
+        # System.Diagnostics.Process.WaitForExit draining inherited Gradle/Java
+        # handles. On Windows that call can outlive the already-stopped client.
+        Add-Content -LiteralPath $metaLog -Value 'MCWebUI direct runner evidence collection begin'
+        Write-RunnerEvidence
+        Add-Content -LiteralPath $metaLog -Value 'MCWebUI direct runner cleanup complete'
     }
 }

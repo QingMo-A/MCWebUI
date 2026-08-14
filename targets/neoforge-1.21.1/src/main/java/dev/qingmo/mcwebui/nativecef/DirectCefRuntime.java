@@ -63,6 +63,7 @@ public final class DirectCefRuntime implements AutoCloseable {
     public long bridgeNavigationEpoch() { return handle == 0 ? 0 : nBridgeNavigationEpoch(handle); }
     public boolean beginRenderFrame() { return handle != 0 && nBeginRenderFrame(handle); }
     public void endRenderFrame() { if (handle != 0) nEndRenderFrame(handle); }
+    public void markFrameDrawn() { if (handle != 0) nMarkFrameDrawn(handle); }
     public int textureId() { return handle == 0 ? 0 : nTextureId(handle); }
     public String diagnosticsJson() { return handle == 0 ? "{\"ready\":false}" : nDiagnostics(handle); }
     public String alphaMode() { return "PREMULTIPLIED"; }
@@ -91,6 +92,7 @@ public final class DirectCefRuntime implements AutoCloseable {
     private static native long nBridgeNavigationEpoch(long handle);
     private static native boolean nBeginRenderFrame(long handle);
     private static native void nEndRenderFrame(long handle);
+    private static native void nMarkFrameDrawn(long handle);
     private static native int nTextureId(long handle);
     private static native String nDiagnostics(long handle);
 }

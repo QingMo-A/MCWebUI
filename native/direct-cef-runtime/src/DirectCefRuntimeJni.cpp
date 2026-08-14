@@ -113,5 +113,6 @@ extern "C" JNIEXPORT jlong JNICALL Java_dev_qingmo_mcwebui_nativecef_DirectCefRu
 }
 extern "C" JNIEXPORT jboolean JNICALL Java_dev_qingmo_mcwebui_nativecef_DirectCefRuntime_nBeginRenderFrame(JNIEnv*, jclass, jlong h) { auto r=Find(h); return r&&r->BeginRenderFrame(); }
 extern "C" JNIEXPORT void JNICALL Java_dev_qingmo_mcwebui_nativecef_DirectCefRuntime_nEndRenderFrame(JNIEnv*, jclass, jlong h) { if(auto r=Find(h)) r->EndRenderFrame(); }
+extern "C" JNIEXPORT void JNICALL Java_dev_qingmo_mcwebui_nativecef_DirectCefRuntime_nMarkFrameDrawn(JNIEnv*, jclass, jlong h) { if(auto r=Find(h)) r->MarkFrameDrawn(); }
 extern "C" JNIEXPORT jint JNICALL Java_dev_qingmo_mcwebui_nativecef_DirectCefRuntime_nTextureId(JNIEnv*, jclass, jlong h) { auto r=Find(h); return r ? static_cast<jint>(r->TextureId()) : 0; }
 extern "C" JNIEXPORT jstring JNICALL Java_dev_qingmo_mcwebui_nativecef_DirectCefRuntime_nDiagnostics(JNIEnv* env, jclass, jlong h) { auto r=Find(h); const std::string json=r?r->DiagnosticsJson():"{\"ready\":false}"; return JavaUtf8(env, json); }

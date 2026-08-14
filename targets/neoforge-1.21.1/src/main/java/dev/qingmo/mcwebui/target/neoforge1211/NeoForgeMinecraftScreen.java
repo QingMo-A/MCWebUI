@@ -58,37 +58,49 @@ public final class NeoForgeMinecraftScreen extends Screen {
         // One active, visible host render gives an opt-in backend at most one
         // non-blocking begin-frame opportunity. Stock MCEF remains callback-driven.
         session.beginFrame(System.nanoTime());
-        DirectCefRenderableSurface direct = surface instanceof DirectCefRenderableSurface d ? d : null;
-        boolean directLocked = direct == null || direct.beginRenderFrame();
-        if (!directLocked) return;
+        if (!surface.beginRenderFrame()) return;
+        try {
+            renderAcquiredSurface(graphics, surface);
+        } finally {
+            // The native WGL lease must be released even if texture lookup, state
+            // setup, buffer construction, upload, or the shader draw throws.
+            surface.endRenderFrame();
+        }
+    }
+
+    private void renderAcquiredSurface(GuiGraphics graphics, NeoForgeRenderableSurface surface) {
         int textureId = surface.textureId();
         // MCEF exposes texture id 0 until its render-thread initialization has completed;
-        // binding it would draw the default texture and make the screen look permanently blank.
-        if (textureId <= 0) { if (direct != null) direct.endRenderFrame(); return; }
+        // a Direct lease can also become stale during context recreation. Returning here is
+        // safe because the outer render method owns the single endRenderFrame() finally.
+        if (textureId <= 0) return;
         int previousTexture = RenderSystem.getShaderTexture(0);
-        RenderSystem.disableDepthTest();
-        // MCEF's surface is created opaque; leave the same post-draw state as the previous
-        // transparent path while avoiding a blend pass for the full-screen browser quad.
-        if (direct != null) RenderSystem.enableBlend(); else RenderSystem.disableBlend();
-        if (direct != null) RenderSystem.blendFuncSeparate(770, 771, 1, 771);
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderTexture(0, textureId);
-        Tesselator tesselator = Tesselator.getInstance();
-        BufferBuilder buffer = tesselator.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-        var pose = graphics.pose().last().pose();
-        boolean flip = direct != null && direct.yFlipped();
-        buffer.addVertex(pose, 0, 0, 0).setUv(0, flip ? 1 : 0);
-        buffer.addVertex(pose, 0, height, 0).setUv(0, flip ? 0 : 1);
-        buffer.addVertex(pose, width, height, 0).setUv(1, flip ? 0 : 1);
-        buffer.addVertex(pose, width, 0, 0).setUv(1, flip ? 1 : 0);
+        SurfaceAlphaMode alphaMode = surface.alphaMode();
         try {
+            RenderSystem.disableDepthTest();
+            alphaMode.apply();
+            RenderSystem.setShader(GameRenderer::getPositionTexShader);
+            RenderSystem.setShaderTexture(0, textureId);
+            Tesselator tesselator = Tesselator.getInstance();
+            BufferBuilder buffer = tesselator.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+            var pose = graphics.pose().last().pose();
+            boolean flip = surface.yFlipped();
+            buffer.addVertex(pose, 0, 0, 0).setUv(0, flip ? 1 : 0);
+            buffer.addVertex(pose, 0, height, 0).setUv(0, flip ? 0 : 1);
+            buffer.addVertex(pose, width, height, 0).setUv(1, flip ? 0 : 1);
+            buffer.addVertex(pose, width, 0, 0).setUv(1, flip ? 1 : 0);
             BufferUploader.drawWithShader(buffer.buildOrThrow());
-        }
-        finally {
-            if (direct != null) { direct.endRenderFrame(); RenderSystem.disableBlend(); }
-            if (direct != null) RenderSystem.defaultBlendFunc();
-            RenderSystem.setShaderTexture(0, previousTexture);
-            RenderSystem.enableDepthTest();
+            surface.markFrameDrawn();
+        } finally {
+            try {
+                alphaMode.restore();
+            } finally {
+                try {
+                    RenderSystem.setShaderTexture(0, previousTexture);
+                } finally {
+                    RenderSystem.enableDepthTest();
+                }
+            }
         }
     }
 

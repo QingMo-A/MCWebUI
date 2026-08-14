@@ -140,9 +140,11 @@ final class DirectCefBackend implements BrowserBackend {
         @Override public void refreshGlContext() { ensureOpen(); runtime.refreshGlContext(); }
         @Override public boolean beginRenderFrame() { ensureOpen(); return runtime.beginRenderFrame(); }
         @Override public void endRenderFrame() { if(!closed) runtime.endRenderFrame(); }
+        @Override public void markFrameDrawn() { if(!closed) runtime.markFrameDrawn(); }
         @Override public int textureId() { return runtime.textureId(); }
-        @Override public String alphaMode() { return runtime.alphaMode(); }
+        @Override public SurfaceAlphaMode alphaMode() { return SurfaceAlphaMode.PREMULTIPLIED; }
         @Override public boolean yFlipped() { return runtime.yFlipped(); }
+        @Override public String runtimeDiagnosticsJson() { return runtime.diagnosticsJson(); }
         @Override public void close() { if(closed)return; closed=true; bridgeHost.close(); runtime.close(); }
         private void ensureOpen(){ if(closed) throw new IllegalStateException("Direct CEF surface is closed"); }
         private static int mouseButtonMask(int button) {

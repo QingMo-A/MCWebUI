@@ -6,8 +6,5 @@ interface DirectCefRenderableSurface extends NeoForgeRenderableSurface {
     boolean bridgeReady();
     void setVisible(boolean visible);
     void refreshGlContext();
-    boolean beginRenderFrame();
-    void endRenderFrame();
-    String alphaMode();
-    boolean yFlipped();
+    String runtimeDiagnosticsJson();
 }

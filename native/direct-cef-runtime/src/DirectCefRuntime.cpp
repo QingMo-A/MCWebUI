@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <sstream>
 #include <thread>
@@ -33,6 +34,13 @@ using WglDXObjectAccessNV = BOOL(WINAPI*)(HANDLE, unsigned int);
 using WglDXLockObjectsNV = BOOL(WINAPI*)(HANDLE, int, HANDLE*);
 using WglDXUnlockObjectsNV = BOOL(WINAPI*)(HANDLE, int, HANDLE*);
 constexpr unsigned kWglAccessReadOnly = 0;
+
+void EmitCheckpoint(std::atomic<bool>& marker, const std::string& message) {
+  if (!marker.exchange(true)) {
+    std::fprintf(stderr, "%s\n", message.c_str());
+    std::fflush(stderr);
+  }
+}
 
 WglDXOpenDeviceNV g_open_device = nullptr;
 WglDXCloseDeviceNV g_close_device = nullptr;
@@ -226,6 +234,27 @@ DirectCefRuntime::DirectCefRuntime(std::string url, std::string cache_dir,
 
 DirectCefRuntime::~DirectCefRuntime() {
   CloseBrowser();
+  // A target must normally end every lease before destroying the session. If
+  // shutdown is nevertheless requested while a lease is active, only unlock
+  // when the creating/render thread still owns the exact registration
+  // context. Calling into WGL with a replacement fullscreen context is more
+  // dangerous than abandoning handles that belong to the dead context.
+  if (render_locked_) {
+    const bool same_context = interop_gl_context_ &&
+        wglGetCurrentContext() == interop_gl_context_ &&
+        wglGetCurrentDC() == interop_gl_dc_;
+    if (OwnerThread() && same_context) {
+      EndRenderFrame();
+    } else {
+      ++interop_unlock_failures_;
+      render_locked_ = false;
+      render_draw_marked_ = false;
+      render_slot_ = -1;
+      render_generation_ = 0;
+      texture_id_ = 0;
+      ++render_ends_;
+    }
+  }
   UnregisterGlObjects();
 }
 
@@ -322,6 +351,7 @@ void DirectCefRuntime::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
 }
 
 void DirectCefRuntime::OnBrowserClosed() {
+  visible_.store(false);
   {
     std::lock_guard<std::mutex> bridge_lock(bridge_mutex_);
     bridge_query_queue_.clear();
@@ -503,8 +533,13 @@ bool DirectCefRuntime::DeliverBridgeMessage(std::uint64_t navigation_epoch,
 }
 
 bool DirectCefRuntime::Resize(int width, int height) {
-  width_.store(std::max(1, width));
-  height_.store(std::max(1, height));
+  const int next_width = std::max(1, width);
+  const int next_height = std::max(1, height);
+  const int previous_width = width_.exchange(next_width);
+  const int previous_height = height_.exchange(next_height);
+  if (previous_width != next_width || previous_height != next_height) {
+    ++resize_count_;
+  }
   CefRefPtr<CefBrowser> browser; { std::lock_guard<std::mutex> lock(mutex_); browser = browser_; }
   if (!browser) return false;
   PostBrowser(browser, base::BindOnce([](CefRefPtr<CefBrowser> b) { b->GetHost()->WasResized(); }, browser));
@@ -512,6 +547,7 @@ bool DirectCefRuntime::Resize(int width, int height) {
 }
 
 bool DirectCefRuntime::SetVisible(bool visible) {
+  visible_.store(visible);
   CefRefPtr<CefBrowser> browser; { std::lock_guard<std::mutex> lock(mutex_); browser = browser_; }
   if (!browser) return false;
   PostBrowser(browser, base::BindOnce([](CefRefPtr<CefBrowser> b, bool v) { b->GetHost()->WasHidden(!v); }, browser, visible));
@@ -524,6 +560,10 @@ bool DirectCefRuntime::RefreshGlContext() {
 }
 
 bool DirectCefRuntime::RequestFrame() {
+  // WasHidden(true) is the native idle policy. Do not wake CEF or increment
+  // cadence counters for a hidden retained browser; the next visible tick
+  // will request a fresh frame.
+  if (!visible_.load() || closing_.load()) return false;
   CefRefPtr<CefBrowser> browser; { std::lock_guard<std::mutex> lock(mutex_); browser = browser_; }
   if (!browser) return false;
   ++frame_requests_;
@@ -587,9 +627,15 @@ bool DirectCefRuntime::SendText(const std::u16string& text) {
 }
 
 void DirectCefRuntime::OnAcceleratedPaint(void* handle, unsigned) {
-  if (!handle || !d3d_device1_ || closing_.load()) return;
+  // A WasHidden transition can race one final compositor callback. Dropping
+  // that callback keeps the retained hidden browser from doing host GPU work.
+  if (!handle || !d3d_device1_ || closing_.load() || !visible_.load()) return;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-  if (FAILED(d3d_device1_->OpenSharedResource1(reinterpret_cast<HANDLE>(handle), IID_PPV_ARGS(&texture)))) return;
+  if (FAILED(d3d_device1_->OpenSharedResource1(reinterpret_cast<HANDLE>(handle), IID_PPV_ARGS(&texture)))) {
+    ++copy_failures_;
+    ++dropped_producer_frames_;
+    return;
+  }
   ++accelerated_callbacks_;
   D3D11_TEXTURE2D_DESC desc{}; texture->GetDesc(&desc);
   std::lock_guard<std::mutex> gpu_lock(d3d_mutex_);
@@ -613,6 +659,7 @@ void DirectCefRuntime::OnAcceleratedPaint(void* handle, unsigned) {
   // replacement too; otherwise one slot gets the new size while the remaining
   // slots are later compared as if they were an established mailbox.
   if (mailbox_mismatch || !has_mailbox_texture) {
+    if (resize_pending_ && pending_generation_ != 0) ++dropped_producer_frames_;
     D3D11_TEXTURE2D_DESC pending_desc{};
     if (pending_texture_) pending_texture_->GetDesc(&pending_desc);
     if (!pending_texture_ || pending_desc.Width != desc.Width ||
@@ -625,6 +672,7 @@ void DirectCefRuntime::OnAcceleratedPaint(void* handle, unsigned) {
       host.MiscFlags = 0;
       if (FAILED(d3d_device_->CreateTexture2D(&host, nullptr, &pending_texture_))) {
         ++copy_failures_;
+        ++dropped_producer_frames_;
         return;
       }
     }
@@ -633,6 +681,7 @@ void DirectCefRuntime::OnAcceleratedPaint(void* handle, unsigned) {
     // into the mailbox atomically, avoiding a transparent resize interval.
     d3d_context_->CopyResource(pending_texture_.Get(), texture.Get());
     pending_generation_ = ++next_generation_;
+    current_texture_generation_.store(pending_generation_);
     resize_pending_ = true;
     ++published_generations_;
     return;
@@ -643,17 +692,26 @@ void DirectCefRuntime::OnAcceleratedPaint(void* handle, unsigned) {
     if (i == latest_slot_) continue;
     slot = i; break;
   }
-  if (slot < 0) { ++copy_failures_; return; }
+  if (slot < 0) {
+    ++copy_failures_;
+    ++dropped_producer_frames_;
+    return;
+  }
   auto& target = slots_[slot];
   if (!target.texture) {
     D3D11_TEXTURE2D_DESC host = desc;
     host.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     host.Usage = D3D11_USAGE_DEFAULT; host.CPUAccessFlags = 0; host.MiscFlags = 0;
-    if (FAILED(d3d_device_->CreateTexture2D(&host, nullptr, &target.texture))) { ++copy_failures_; return; }
+    if (FAILED(d3d_device_->CreateTexture2D(&host, nullptr, &target.texture))) {
+      ++copy_failures_;
+      ++dropped_producer_frames_;
+      return;
+    }
   }
   target.writing = true;
   d3d_context_->CopyResource(target.texture.Get(), texture.Get());
   target.generation = ++next_generation_;
+  current_texture_generation_.store(target.generation);
   target.writing = false;
   latest_slot_ = slot;
   ++published_generations_;
@@ -666,6 +724,7 @@ void DirectCefRuntime::EnsureD3DDevice() {
 }
 
 bool DirectCefRuntime::EnsureGlInterop() {
+  if (!wglGetCurrentContext() || !wglGetCurrentDC() || !d3d_device_) return false;
   auto get = [](const char* name) -> PROC { return wglGetProcAddress(name); };
   using WglGetExtensionsStringARB = const char* (WINAPI*)(HDC);
   using WglGetExtensionsStringEXT = const char* (WINAPI*)();
@@ -700,19 +759,23 @@ bool DirectCefRuntime::EnsureGlInterop() {
   wgl_dx_object_access_ = reinterpret_cast<WglDXObjectAccessNV>(get("wglDXObjectAccessNV"));
   wgl_dx_lock_objects_ = reinterpret_cast<WglDXLockObjectsNV>(get("wglDXLockObjectsNV"));
   wgl_dx_unlock_objects_ = reinterpret_cast<WglDXUnlockObjectsNV>(get("wglDXUnlockObjectsNV"));
-  interop_supported_ = has("WGL_NV_DX_interop2") && wgl_dx_open_device_ &&
+  const bool supported = has("WGL_NV_DX_interop2") && wgl_dx_open_device_ &&
       wgl_dx_close_device_ && wgl_dx_register_object_ && wgl_dx_unregister_object_ &&
       wgl_dx_object_access_ && wgl_dx_lock_objects_ && wgl_dx_unlock_objects_;
-  if (!interop_supported_) return false;
+  interop_supported_.store(supported);
+  if (!supported) return false;
   // Resize teardown intentionally closes the old interop device. Capability
   // functions remain valid for the same current WGL context, but the device
   // handle must be reopened before any slot can be registered. Returning the
   // cached capability alone previously passed nullptr into the NVIDIA driver.
   if (!interop_device_) {
     interop_device_ = wgl_dx_open_device_(d3d_device_.Get());
-    interop_device_open_ = interop_device_ != nullptr;
+    interop_device_open_.store(interop_device_ != nullptr);
+    if (interop_device_) {
+      EmitCheckpoint(marker_interop_ready_, "DIRECT_CEF_MC_INTEROP_READY");
+    }
   }
-  return interop_device_ != nullptr && interop_device_open_;
+  return interop_device_ != nullptr && interop_device_open_.load();
 }
 
 bool DirectCefRuntime::RebindGlContextIfNeeded() {
@@ -723,10 +786,16 @@ bool DirectCefRuntime::RebindGlContextIfNeeded() {
     interop_gl_context_ = current_context;
     interop_gl_dc_ = current_dc;
     gl_context_refresh_requested_.store(false);
+    EmitCheckpoint(marker_gl_context_ready_, "DIRECT_CEF_MC_GL_CONTEXT_READY");
     return true;
   }
-  const bool forced = gl_context_refresh_requested_.exchange(false);
-  if (!forced && interop_gl_context_ == current_context && interop_gl_dc_ == current_dc) return true;
+  // A requested refresh is only a hint to re-sample WGL identity. Ordinary
+  // GUI resizes (and callers that conservatively request a refresh) must not
+  // tear down/re-register the mailbox when HGLRC/HDC are unchanged.
+  const bool identity_changed = interop_gl_context_ != current_context ||
+      interop_gl_dc_ != current_dc;
+  gl_context_refresh_requested_.store(false);
+  if (!identity_changed) return true;
 
   // GLFW can replace the Minecraft WGL context during fullscreen transitions
   // without changing logical GUI dimensions. WGL_NV_DX_interop objects belong
@@ -735,38 +804,62 @@ bool DirectCefRuntime::RebindGlContextIfNeeded() {
   // render thread with the new context current.
   if (render_locked_) return false;
   ++gl_context_rebinds_;
+  ++context_refresh_count_;
   UnregisterGlObjects();
   interop_gl_context_ = current_context;
   interop_gl_dc_ = current_dc;
-  interop_supported_ = false;
+  interop_supported_.store(false);
   return true;
 }
 bool DirectCefRuntime::RegisterSlot(int index) {
-  if (index < 0 || index >= static_cast<int>(slots_.size()) || !EnsureGlInterop()) return false;
-  if (!interop_device_ || !wgl_dx_register_object_ || !wgl_dx_object_access_) return false;
+  if (index < 0 || index >= static_cast<int>(slots_.size())) {
+    ++registration_failures_;
+    return false;
+  }
+  if (!EnsureGlInterop()) {
+    ++registration_failures_;
+    return false;
+  }
+  if (!interop_device_ || !wgl_dx_register_object_ || !wgl_dx_object_access_) {
+    ++registration_failures_;
+    return false;
+  }
   Slot& slot = slots_[index];
   if (slot.gl_object) return true;
-  glGenTextures(1, &slot.gl_name); glBindTexture(GL_TEXTURE_2D, slot.gl_name);
+  glGenTextures(1, &slot.gl_name);
+  if (!slot.gl_name) {
+    ++registration_failures_;
+    return false;
+  }
+  glBindTexture(GL_TEXTURE_2D, slot.gl_name);
   slot.gl_object = wgl_dx_register_object_(interop_device_, slot.texture.Get(), slot.gl_name,
                                            GL_TEXTURE_2D, 0);
   if (!slot.gl_object || !wgl_dx_object_access_(slot.gl_object, 0)) {
     if (slot.gl_object) wgl_dx_unregister_object_(interop_device_, slot.gl_object);
     if (slot.gl_name) glDeleteTextures(1, &slot.gl_name);
-    slot.gl_object = nullptr; slot.gl_name = 0; return false;
+    slot.gl_object = nullptr; slot.gl_name = 0;
+    ++registration_failures_;
+    return false;
   }
+  ++registered_slots_;
+  EmitCheckpoint(marker_mailbox_registered_,
+                  "DIRECT_CEF_MC_MAILBOX_REGISTERED slots=" +
+                      std::to_string(registered_slots_.load()));
   return true;
 }
 void DirectCefRuntime::UnregisterGlObjects() {
   const bool registration_context_current = interop_gl_context_ &&
       wglGetCurrentContext() == interop_gl_context_ &&
       wglGetCurrentDC() == interop_gl_dc_;
-  if (registration_context_current && interop_device_ && wgl_dx_unregister_object_) {
+  if (registration_context_current) {
     for (auto& slot : slots_) {
-      if (slot.gl_object) wgl_dx_unregister_object_(interop_device_, slot.gl_object);
+      if (slot.gl_object && interop_device_ && wgl_dx_unregister_object_) {
+        wgl_dx_unregister_object_(interop_device_, slot.gl_object);
+      }
       if (slot.gl_name) glDeleteTextures(1, &slot.gl_name);
       slot.gl_object = nullptr; slot.gl_name = 0;
     }
-    if (wgl_dx_close_device_) wgl_dx_close_device_(interop_device_);
+    if (interop_device_ && wgl_dx_close_device_) wgl_dx_close_device_(interop_device_);
   } else {
     // A fullscreen transition may already have destroyed the registration
     // context. Calling unregister/delete with the replacement context makes
@@ -779,10 +872,14 @@ void DirectCefRuntime::UnregisterGlObjects() {
       slot.gl_name = 0;
     }
   }
-  interop_device_ = nullptr; interop_device_open_ = false; texture_id_ = 0;
+  registered_slots_.store(0);
+  interop_device_ = nullptr;
+  interop_device_open_.store(false);
+  texture_id_ = 0;
 }
 bool DirectCefRuntime::BeginRenderFrame() {
-  if (!OwnerThread()) return false;
+  if (!OwnerThread() || !visible_.load() || closing_.load()) return false;
+  ++render_begin_attempts_;
   std::lock_guard<std::mutex> gpu_lock(d3d_mutex_);
   HGLRC context_before = interop_gl_context_;
   HDC dc_before = interop_gl_dc_;
@@ -827,17 +924,62 @@ bool DirectCefRuntime::BeginRenderFrame() {
   if (!interop_device_ || !object || !wgl_dx_lock_objects_ ||
       !wgl_dx_lock_objects_(interop_device_, 1, &object)) {
     ++gl_lock_failures_;
+    ++interop_lock_failures_;
     return false;
   }
-  render_slot_ = slot; render_locked_ = true; texture_id_ = slots_[slot].gl_name;
+  render_slot_ = slot;
+  render_locked_ = true;
+  render_draw_marked_ = false;
+  render_generation_ = slots_[slot].generation;
+  texture_id_ = slots_[slot].gl_name;
+  ++interop_locks_;
+  ++render_begin_successes_;
+  EmitCheckpoint(marker_first_lease_,
+                  "DIRECT_CEF_MC_FIRST_LEASE texture=" + std::to_string(texture_id_));
   return true;
 }
 void DirectCefRuntime::EndRenderFrame() {
   if (!render_locked_ || render_slot_ < 0) return;
   std::lock_guard<std::mutex> lock(mutex_);
   HANDLE object = slots_[render_slot_].gl_object;
-  if (interop_device_ && wgl_dx_unlock_objects_) wgl_dx_unlock_objects_(interop_device_, 1, &object);
-  render_locked_ = false; render_slot_ = -1;
+  const bool unlocked = interop_device_ && wgl_dx_unlock_objects_ &&
+      wgl_dx_unlock_objects_(interop_device_, 1, &object);
+  if (unlocked) {
+    ++interop_unlocks_;
+  } else {
+    ++interop_unlock_failures_;
+  }
+  render_locked_ = false;
+  render_draw_marked_ = false;
+  render_slot_ = -1;
+  render_generation_ = 0;
+  texture_id_ = 0;
+  // Count the end of every successful begin even if the driver rejected the
+  // unlock; the separate failure counter preserves the lock/unlock invariant
+  // while making the driver error visible to diagnostics.
+  ++render_ends_;
+}
+bool DirectCefRuntime::MarkFrameDrawn() {
+  if (!OwnerThread()) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!render_locked_ || render_slot_ < 0 || render_draw_marked_ || render_generation_ == 0) {
+    return false;
+  }
+  render_draw_marked_ = true;
+  const std::uint64_t generation = render_generation_;
+  // Count distinct producer generations separately from redraws of the same
+  // retained mailbox texture. The two counters are mutually exclusive, so
+  // successful target draws equal drawnGenerations + repeatedDraws.
+  if (generation != last_drawn_generation_ || last_drawn_generation_ == 0) {
+    ++drawn_generations_;
+  } else {
+    ++repeated_draws_;
+  }
+  last_drawn_generation_ = generation;
+  current_texture_generation_.store(generation);
+  EmitCheckpoint(marker_first_draw_,
+                  "DIRECT_CEF_MC_FIRST_DRAW generation=" + std::to_string(generation));
+  return true;
 }
 unsigned DirectCefRuntime::TextureId() const { return texture_id_; }
 std::string DirectCefRuntime::DiagnosticsJson() const {
@@ -850,15 +992,35 @@ std::string DirectCefRuntime::DiagnosticsJson() const {
     bridge_bootstrap = bridge_bootstrap_installed_;
     bridge_error = bridge_last_error_;
   }
-  std::ostringstream out; out << "{\"ready\":" << (ready_.load() ? "true" : "false")
+  std::ostringstream out;
+  out << "{\"ready\":" << (ready_.load() ? "true" : "false")
+      << ",\"visible\":" << (visible_.load() ? "true" : "false")
       << ",\"requestedTargetHz\":" << target_hz_
       << ",\"configuredWindowlessFrameRate\":" << std::clamp(target_hz_, 1, 144)
       << ",\"externalBeginFrameEnabled\":true"
       << ",\"acceleratedCallbacks\":" << accelerated_callbacks_.load()
+      << ",\"interopDeviceOpen\":" << (interop_device_open_.load() ? "true" : "false")
+      << ",\"registeredSlots\":" << registered_slots_.load()
+      << ",\"registrationFailures\":" << registration_failures_.load()
+      << ",\"renderBeginAttempts\":" << render_begin_attempts_.load()
+      << ",\"renderBeginSuccesses\":" << render_begin_successes_.load()
+      << ",\"renderEnds\":" << render_ends_.load()
+      << ",\"interopLocks\":" << interop_locks_.load()
+      << ",\"interopUnlocks\":" << interop_unlocks_.load()
+      << ",\"interopLockFailures\":" << interop_lock_failures_.load()
+      << ",\"interopUnlockFailures\":" << interop_unlock_failures_.load()
       << ",\"publishedGenerations\":" << published_generations_.load()
+      << ",\"drawnGenerations\":" << drawn_generations_.load()
+      << ",\"repeatedDraws\":" << repeated_draws_.load()
+      << ",\"droppedProducerFrames\":" << dropped_producer_frames_.load()
+      << ",\"resizeCount\":" << resize_count_.load()
+      << ",\"contextRefreshCount\":" << context_refresh_count_.load()
+      << ",\"currentTextureGeneration\":" << current_texture_generation_.load()
+      // Backward-compatible aliases retained for existing Java telemetry.
       << ",\"frameRequests\":" << frame_requests_.load()
       << ",\"copyFailures\":" << copy_failures_.load()
       << ",\"glLockFailures\":" << gl_lock_failures_.load()
+      << ",\"glUnlockFailures\":" << interop_unlock_failures_.load()
       << ",\"glContextRebinds\":" << gl_context_rebinds_.load()
       << ",\"bridgeBootstrapInstalled\":" << (bridge_bootstrap ? "true" : "false")
       << ",\"bridgeQueriesReceived\":" << bridge_queries_received_.load()
@@ -866,5 +1028,19 @@ std::string DirectCefRuntime::DiagnosticsJson() const {
       << ",\"bridgePendingQueries\":" << bridge_pending
       << ",\"bridgeNavigationEpoch\":" << bridge_navigation_epoch_.load()
       << ",\"bridgeLastError\":" << QuoteJavaScript(bridge_error)
-      << ",\"interop\":\"" << (interop_supported_ ? "SUPPORTED" : "UNSUPPORTED") << "\"}"; return out.str();
+      << ",\"checkpoints\":{"
+      << "\"DIRECT_CEF_MC_GL_CONTEXT_READY\":"
+      << (marker_gl_context_ready_.load() ? "true" : "false")
+      << ",\"DIRECT_CEF_MC_INTEROP_READY\":"
+      << (marker_interop_ready_.load() ? "true" : "false")
+      << ",\"DIRECT_CEF_MC_MAILBOX_REGISTERED\":"
+      << (marker_mailbox_registered_.load() ? "true" : "false")
+      << ",\"DIRECT_CEF_MC_FIRST_LEASE\":"
+      << (marker_first_lease_.load() ? "true" : "false")
+      << ",\"DIRECT_CEF_MC_FIRST_DRAW\":"
+      << (marker_first_draw_.load() ? "true" : "false")
+      << "}"
+      << ",\"interop\":\"" << (interop_supported_.load() ? "SUPPORTED" : "UNSUPPORTED")
+      << "\"}";
+  return out.str();
 }

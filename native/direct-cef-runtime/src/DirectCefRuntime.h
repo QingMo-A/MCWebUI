@@ -63,6 +63,11 @@ class DirectCefRuntime {
   // Called on Minecraft's render thread while its WGL context is current.
   bool BeginRenderFrame();
   void EndRenderFrame();
+  // Called by the target immediately after its draw call succeeds while the
+  // render lease is active. Keeping this separate from BeginRenderFrame lets
+  // diagnostics distinguish a locked texture from one actually submitted by
+  // Minecraft's renderer.
+  bool MarkFrameDrawn();
   unsigned TextureId() const;
   const char* AlphaMode() const { return "PREMULTIPLIED"; }
   // Minecraft's GUI projection is top-left-oriented. The standalone proof has
@@ -121,6 +126,32 @@ class DirectCefRuntime {
   std::atomic<std::uint64_t> copy_failures_{0};
   std::atomic<std::uint64_t> gl_lock_failures_{0};
   std::atomic<std::uint64_t> gl_context_rebinds_{0};
+  std::atomic<bool> visible_{true};
+  std::atomic<bool> interop_device_open_{false};
+  std::atomic<bool> interop_supported_{false};
+  std::atomic<std::uint64_t> registration_failures_{0};
+  std::atomic<std::uint64_t> render_begin_attempts_{0};
+  std::atomic<std::uint64_t> render_begin_successes_{0};
+  std::atomic<std::uint64_t> render_ends_{0};
+  std::atomic<std::uint64_t> interop_locks_{0};
+  std::atomic<std::uint64_t> interop_unlocks_{0};
+  std::atomic<std::uint64_t> interop_lock_failures_{0};
+  std::atomic<std::uint64_t> interop_unlock_failures_{0};
+  std::atomic<std::uint64_t> registered_slots_{0};
+  // drawn_generations and repeated_draws are mutually exclusive: a successful
+  // target draw increments the former only for a new producer generation,
+  // and the latter when it redraws the retained generation.
+  std::atomic<std::uint64_t> drawn_generations_{0};
+  std::atomic<std::uint64_t> repeated_draws_{0};
+  std::atomic<std::uint64_t> dropped_producer_frames_{0};
+  std::atomic<std::uint64_t> resize_count_{0};
+  std::atomic<std::uint64_t> context_refresh_count_{0};
+  std::atomic<std::uint64_t> current_texture_generation_{0};
+  std::atomic<bool> marker_gl_context_ready_{false};
+  std::atomic<bool> marker_interop_ready_{false};
+  std::atomic<bool> marker_mailbox_registered_{false};
+  std::atomic<bool> marker_first_lease_{false};
+  std::atomic<bool> marker_first_draw_{false};
   std::atomic<std::uint64_t> bridge_navigation_epoch_{0};
   std::atomic<std::uint64_t> bridge_queries_received_{0};
   std::atomic<std::uint64_t> bridge_handshakes_completed_{0};
@@ -160,8 +191,10 @@ class DirectCefRuntime {
   bool browser_close_drained_ = false;
   bool shutdown_complete_ = false;
   HANDLE interop_device_ = nullptr;
-  bool interop_supported_ = false;
   bool render_locked_ = false;
+  bool render_draw_marked_ = false;
+  std::uint64_t render_generation_ = 0;
+  std::uint64_t last_drawn_generation_ = 0;
   unsigned texture_id_ = 0;
   std::string last_error_;
   std::thread::id owner_thread_;
@@ -182,7 +215,6 @@ class DirectCefRuntime {
   WglDXObjectAccessNV wgl_dx_object_access_ = nullptr;
   WglDXLockObjectsNV wgl_dx_lock_objects_ = nullptr;
   WglDXUnlockObjectsNV wgl_dx_unlock_objects_ = nullptr;
-  bool interop_device_open_ = false;
   HGLRC interop_gl_context_ = nullptr;
   HDC interop_gl_dc_ = nullptr;
   bool OwnerThread() const { return std::this_thread::get_id() == owner_thread_; }
