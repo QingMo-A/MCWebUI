@@ -6,6 +6,7 @@ import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeException;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeFailureReason;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimePackageImporter;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeRequirement;
+import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeReleaseCatalog;
 import dev.qingmo.mcwebui.nativecef.DirectCefRuntimeSetupMessages;
 import dev.qingmo.mcwebui.nativecef.RuntimeImportProgress;
 import dev.qingmo.mcwebui.nativecef.RuntimeImportResult;
@@ -76,11 +77,21 @@ public final class DirectCefRuntimeSetupScreen extends Screen {
 
     public DirectCefRuntimeSetupScreen(Path instanceRoot, DirectCefRuntimeDiscovery.Probe probe,
                                        Screen previousScreen, Runnable onContinue) {
-        // Production currently has no published runtime asset; download is
-        // enabled only by the injectable descriptor constructor used by a
-        // future project-owned release configuration and deterministic tests.
-        this(instanceRoot, probe, previousScreen, onContinue, null,
+        // The project-owned catalog is the only production download trust
+        // anchor. A malformed bundled resource is reported clearly and does
+        // not prevent this recovery screen from offering offline import.
+        this(instanceRoot, probe, previousScreen, onContinue, bundledReleaseDescriptor(),
                 new DirectCefRuntimeDownloader());
+    }
+
+    private static DirectCefRuntimeReleaseDescriptor bundledReleaseDescriptor() {
+        try {
+            return DirectCefRuntimeReleaseCatalog.current().orElse(null);
+        } catch (DirectCefRuntimeException failure) {
+            LOGGER.error("MCWebUI bundled Direct CEF release descriptor is invalid; "
+                    + "automatic download is disabled while offline import remains available", failure);
+            return null;
+        }
     }
 
     /** Injectable descriptor/downloader constructor used by deterministic setup tests. */

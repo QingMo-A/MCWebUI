@@ -15,6 +15,10 @@ def directCefBridgeIntegration = providers.gradleProperty('mcwebuiDirectCefBridg
 def proofPackage = providers.gradleProperty('mcwebuiProofPackage').orElse('').get()
 def proofInstanceRoot = providers.gradleProperty('mcwebuiProofInstanceRoot').orElse('').get()
 def proofEvidence = providers.gradleProperty('mcwebuiProofEvidence').orElse('').get()
+def proofDescriptor = providers.gradleProperty('mcwebuiProofDescriptor').orElse('').get()
+def proofMode = providers.gradleProperty('mcwebuiProofMode').orElse('').get()
+def directCefReleaseDescriptor = providers.gradleProperty('mcwebuiDirectCefReleaseDescriptor')
+def directCefReleaseStage = layout.buildDirectory.dir('generated/direct-cef-release')
 
 sourceSets {
     main {
@@ -145,6 +149,12 @@ tasks.withType(Test).configureEach {
     if (!proofEvidence.isBlank()) {
         systemProperty 'mcwebui.proof.evidence', proofEvidence
     }
+    if (!proofDescriptor.isBlank()) {
+        systemProperty 'mcwebui.proof.descriptor', proofDescriptor
+    }
+    if (!proofMode.isBlank()) {
+        systemProperty 'mcwebui.proof.mode', proofMode
+    }
     if (directCefBridgeIntegration.get()) {
         systemProperty 'mcwebui.directCef.integration', 'true'
         systemProperty 'mcwebui.directCef.integration.url',
@@ -160,11 +170,46 @@ tasks.withType(Test).configureEach {
     }
 }
 
+def prepareDirectCefReleaseDescriptor = tasks.register('prepareDirectCefReleaseDescriptor') {
+    group = 'mcwebui'
+    description = 'Validate and stage the optional project-owned Direct CEF release descriptor.'
+    dependsOn(tasks.named('compileJava'))
+    inputs.property('mcwebuiDirectCefReleaseDescriptor', directCefReleaseDescriptor.orElse('').get())
+    outputs.dir(directCefReleaseStage)
+    doLast {
+        File stage = directCefReleaseStage.get().asFile
+        project.delete(stage)
+        String configuredValue = directCefReleaseDescriptor.orElse('').get().trim()
+        if (configuredValue.isEmpty()) return
+
+        File input = new File(configuredValue)
+        if (!input.isAbsolute()) {
+            throw new GradleException('mcwebuiDirectCefReleaseDescriptor must be an absolute path: ' + configuredValue)
+        }
+        if (!input.isFile()) {
+            throw new GradleException('mcwebuiDirectCefReleaseDescriptor does not point to a file: ' + input)
+        }
+
+        javaexec {
+            classpath = files(sourceSets.main.output.classesDirs)
+            mainClass = 'dev.qingmo.mcwebui.nativecef.DirectCefRuntimeReleaseDescriptorBuildValidator'
+            args input.absolutePath
+        }
+        project.copy {
+            from(input)
+            into(new File(stage, 'META-INF/mcwebui'))
+            rename { 'direct-cef-runtime-release.json' }
+        }
+    }
+}
+
 tasks.named('processResources') {
+    dependsOn(prepareDirectCefReleaseDescriptor)
     dependsOn(rootProject.tasks.named('frontendBuild'))
     from(rootProject.file('frontend/playground/dist')) {
         into('web/playground')
     }
+    from(directCefReleaseStage)
 }
 
 tasks.named('jar') {
