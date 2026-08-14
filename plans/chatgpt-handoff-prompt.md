@@ -258,11 +258,39 @@ Important review findings at this checkpoint:
 
     Runtime ownership is split conceptually into process-global CEF resources,
     retained browser/session/mailbox/bridge resources, and Screen attachment
-    focus/input/drawing. `plans/direct-cef-distribution-plan.md` is design-only:
-    it specifies instance-scoped immutable runtimes, a versioned manifest,
-    per-file SHA-256, temporary installation plus atomic publication,
-    multi-instance locking and shared platform ownership. No downloader,
-    updater, automatic install or production runtime archive was added.
+    focus/input/drawing. At this historical checkpoint,
+    `plans/direct-cef-distribution-plan.md` was design-only; checkpoint 15 below
+    records the implemented Phase A discovery boundary. No downloader, updater,
+    automatic install or production runtime archive was added here.
+
+15. Direct CEF runtime distribution Phase A freezes schema v1 and the project
+    requirement `cef-144.0.33-cb4715c` / ABI 1 / Windows x86_64. The NeoForge
+    Direct backend discovers a prepared runtime from the explicit validated
+    `mcwebui.directCef.runtimeDir` override or the standard instance location,
+    with invalid override precedence and no MCEF fallback. It validates the
+    manifest identity, safe relative paths, complete file tree, byte sizes and
+    streaming SHA-256 before the native loader can run.
+
+    The native loader now accepts only `ValidatedDirectCefRuntime`; the old
+    static arbitrary-path `mcwebui.directCef.native` load was removed. Its
+    process-global guard allows the same canonical root/identity and rejects a
+    runtime switch. Mutable cache data is kept under the instance cache tree,
+    outside the immutable runtime directory. The proof runner assembles a
+    standard directory by default and retains an explicit override mode, both
+    using the same manifest generator, validator and loader.
+
+    Bounded NeoForge runs verified both `STANDARD` and `OVERRIDE`: each
+    validated a 239-file prepared runtime, started the process-owned bundled
+    page, completed one bridge handshake, and completed hidden prewarm with two
+    accelerated generations. Lease/interop invariants were balanced with zero
+    registration, lock or unlock failures. The runs did not perform a new
+    visible first-draw/manual visual acceptance.
+
+    Distribution status is **PHASE A IMPLEMENTED / PHASE B-C NOT
+    IMPLEMENTED**. This means **MANUAL PREINSTALLED DIRECTORY SUPPORTED** only.
+    Offline ZIP import, extraction/staging/atomic publication, download,
+    updater, cleanup and release signing remain future work; do not describe
+    them as available.
 
 ### Near-term project direction
 

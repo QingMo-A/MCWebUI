@@ -38,6 +38,23 @@ direct entrypoint and bootstrap keep MCEF/CEF imports in a separate class so
 the direct process can start with only MCWebUI, Minecraft, and NeoForge mods.
 The normal run (without that property) still uses stock MCEF.
 
+## Runtime discovery boundary (Phase A)
+
+The Direct backend no longer loads arbitrary native/helper paths from a class
+initializer. `NeoForgeWebSession` first resolves the fixed project requirement,
+discovers either the explicit `mcwebui.directCef.runtimeDir` override or the
+standard instance directory, parses `runtime.json`, validates the complete file
+tree plus size/SHA-256, and only then passes a `ValidatedDirectCefRuntime` to
+the process-global loader. A bad explicit override fails visibly and never
+falls through to another runtime or to MCEF.
+
+The standard location is
+`<instance>/mcwebui/runtime/cef/cef-144.0.33-cb4715c/windows-x86_64`.
+Mutable cache data defaults to
+`<instance>/mcwebui/cache/cef/cef-144.0.33-cb4715c`, outside the immutable
+runtime tree. Phase A supports a prepared directory only; ZIP import and
+automatic download are not implemented.
+
 ## Exact bounded runner
 
 ```powershell
@@ -45,10 +62,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
   .\scripts\direct-cef-proof\run-neoforge-webscreen.ps1 `
   -CefRoot "$env:MCWEBUI_CEF_ROOT" `
   -BuildRoot "$env:TEMP\mcwebui-direct-cef-runtime-build" `
-  -RuntimeRoot "$env:TEMP\mcwebui-direct-cef-runtime" `
-  -CacheRoot "$env:TEMP\mcwebui-direct-cef-cache" `
+  -RuntimeRoot "$env:TEMP\mcwebui-direct-cef-instance" `
+  -RuntimeSource Standard `
   -DurationMs 90000 -AutoOpen -TargetHz 60
 ```
+
+For the explicit-override regression, use a new empty `RuntimeRoot` and add
+`-RuntimeSource Override`. The runner assembles a prepared directory, generates
+its deterministic manifest, and launches through discovery/validation/loading;
+it does not pass raw native or helper file paths.
+
+The 2026-08-14 Phase A standard and override runs both loaded the bundled Vue
+page, completed one Java bridge handshake, and completed hidden prewarm with two
+accelerated/published generations. Render lease and WGL lock/unlock invariants
+were balanced with zero registration/lock failures. These bounded runs verified
+startup/discovery/prewarm; they did not replace the existing user visual
+acceptance checkpoint.
 
 The runner builds the frontend/native artifacts and normally lets Minecraft
 serve the bundled page. It waits for the ModDev game process and sound-engine

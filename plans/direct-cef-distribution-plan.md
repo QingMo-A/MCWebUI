@@ -1,8 +1,50 @@
 # Direct CEF runtime distribution plan
 
-Status: **DESIGN ONLY / NOT IMPLEMENTED** (2026-08-14).
+Status: **PHASE A IMPLEMENTED / PHASE B-C NOT IMPLEMENTED** (2026-08-14).
 
-This plan defines how MCWebUI should distribute and locate the external Direct CEF runtime once the experimental backend is productized. It deliberately does **not** implement a downloader, installer, updater, or native packaging pipeline yet.
+This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A now implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory. It deliberately does **not** implement a downloader, ZIP importer, installer, updater, or production native packaging pipeline yet.
+
+## Phase A implementation checkpoint
+
+The frozen runtime requirement is schema v1 / runtime ABI 1 / `cef-144.0.33-cb4715c`, with CEF `144.0.33`, Chromium `144.0.7559.259`, platform `windows`, and architecture `x86_64`. The project-owned requirement is compared against `runtime.json`; the manifest does not define what MCWebUI wants.
+
+The schema records four entrypoints (`native`, `helper`, `cef`, and `chromeElf`) plus a complete, deterministically ordered file list. Every listed file has an exact byte size and SHA-256. Validation occurs before native loading and rejects unsafe relative paths, case-insensitive duplicates, reparse/symbolic links, missing or unexpected files, identity mismatches, size mismatches, and hash mismatches with typed failure reasons.
+
+Java's Windows filesystem provider does not expose every reparse subtype uniformly.
+Phase A therefore combines explicit symbolic-link/reparse probes with
+`NOFOLLOW_LINKS` checks and real-path containment. Escapes outside the selected
+runtime root are rejected; Phase B archive staging must harden this boundary
+again rather than assuming every Windows reparse subtype was fully classified.
+
+Phase A supports these two preinstalled-directory sources, in this order:
+
+1. explicit validated developer override: `mcwebui.directCef.runtimeDir`;
+2. standard instance location: `<instance>/mcwebui/runtime/cef/cef-144.0.33-cb4715c/windows-x86_64`.
+
+An invalid explicit override is authoritative and does not fall through to the standard directory. Mutable CEF data remains separate at `<instance>/mcwebui/cache/cef/cef-144.0.33-cb4715c` unless an explicit cache override is supplied. The validated object provides the resolved DLL/helper entrypoints to the process-global native loader; the old class-initializer path that loaded an arbitrary `mcwebui.directCef.native` string has been removed. A JVM may reuse the same validated root and identity, but it rejects switching roots or identities after selection/loading.
+
+`scripts/direct-cef-runtime/generate-runtime-manifest.ps1` creates the deterministic Phase A manifest for a prepared runtime directory. It is a consistency tool, not a signer: SHA-256 detects mismatched content but does not establish a trusted publisher. The proof runner assembles a temporary standard layout by default and also has an `Override` mode; both pass through the same validator and loader.
+
+**MANUAL PREINSTALLED DIRECTORY SUPPORTED. OFFLINE ZIP IMPORT AND AUTOMATIC DOWNLOAD ARE NOT IMPLEMENTED.**
+
+### Phase A verification (2026-08-14)
+
+Repeated generation over the fixed CEF 144 build directory was byte-for-byte
+deterministic. The runner excludes the standalone smoke executable and produced
+a 239-file proof manifest. Both runner modes reached a real NeoForge Direct
+startup through the new boundary:
+
+| Source | Selected directory kind | Manifest | Bundled page | Bridge | Hidden prewarm |
+|---|---|---:|---:|---:|---:|
+| `STANDARD` | standard instance tree | 239 files validated | started | 1 handshake | completed, 2 accelerated generations |
+| `OVERRIDE` | non-standard explicit directory | 239 files validated | started | 1 handshake | completed, 2 accelerated generations |
+
+Both runs reported balanced render leases and interop locks with zero
+registration/lock/unlock failures. They intentionally stopped after the hidden
+prewarm gate; the evidence collector therefore kept its separate visible
+first-draw/manual-acceptance state as `USER_ACTION_REQUIRED`. That does not
+invalidate the discovery/validation/load/prewarm result and is not presented as
+a new Minecraft visual acceptance run.
 
 The primary product goal is to keep the MCWebUI mod JAR small while still making first-run setup reliable for normal players, offline users, modpack authors, and developers.
 
@@ -18,7 +60,7 @@ The primary product goal is to keep the MCWebUI mod JAR small while still making
 
 ## Expected storage layout
 
-The exact final directory names are still subject to implementation review, but the semantic layout should be equivalent to:
+Phase A freezes the standard Windows x86_64 directory layout as:
 
 ```text
 .minecraft/
@@ -46,16 +88,23 @@ Do not install into `Program Files`, `System32`, the Windows registry, or the gl
 
 ## Runtime identity
 
-Each supported runtime must have a stable identity. A future manifest should include at least:
+Each supported runtime has a stable identity. Schema v1 is:
 
 ```json
 {
+  "schemaVersion": 1,
   "runtimeId": "cef-144.0.33-cb4715c",
   "mcwebuiRuntimeAbi": 1,
   "cefVersion": "144.0.33",
   "chromiumVersion": "144.0.7559.259",
   "platform": "windows",
   "arch": "x86_64",
+  "entrypoints": {
+    "native": "mcwebui-direct-cef.dll",
+    "helper": "mcwebui-cef-helper.exe",
+    "cef": "libcef.dll",
+    "chromeElf": "chrome_elf.dll"
+  },
   "files": [
     {
       "path": "libcef.dll",
@@ -66,7 +115,7 @@ Each supported runtime must have a stable identity. A future manifest should inc
 }
 ```
 
-The concrete schema may change, but the following semantics are required:
+Future schema versions may extend this model, but schema v1 requires:
 
 - MCWebUI runtime ABI/version compatibility;
 - exact CEF/runtime identity;
@@ -415,13 +464,16 @@ The runtime package can be large without making every mod JAR large, and one ins
 
 ## Proposed implementation phases
 
+Current phase state: **Phase A IMPLEMENTED; Phase B/C NOT IMPLEMENTED.**
+
 ### Phase A — manifest and discovery
 
-- freeze runtime identity/schema;
-- implement runtime path resolution;
-- implement validation only;
-- support preinstalled/manual directory runtime;
-- no network download yet.
+- frozen runtime identity/schema v1;
+- standard and explicit-override path resolution;
+- complete-tree, size and streaming SHA-256 validation;
+- validated preinstalled/manual directory runtime;
+- explicit validated native-loading boundary;
+- no network download or archive import.
 
 ### Phase B — offline package import
 
@@ -477,4 +529,4 @@ For the current project stage, adopt the following design decision now:
 
 > Direct CEF will use an external, shared, versioned MCWebUI runtime. Automatic first-use installation will be the preferred player experience, but manual/offline package import and preinstalled runtime discovery are mandatory supported workflows. Automatic downloading is not a hard runtime dependency.
 
-Implementation remains deferred until the current Direct CEF experimental Minecraft runtime has completed its hardening/regression phase.
+Phase A is implemented and verified for prepared directories. Phase B remains the next distribution step: safely import an official offline runtime package through staging and atomic publication. Phase C automatic download remains future work and must converge on the same validated-directory boundary.
