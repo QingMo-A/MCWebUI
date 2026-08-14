@@ -211,6 +211,17 @@ Important review findings at this checkpoint:
     no longer implies 180 browser requests; game signals, rAF, accelerated
     generations and presents are explicitly different measurements.
 
+    Once hidden prewarm completes, `WasHidden(true)` stops external frame
+    requests, accelerated paints, GPU copies and GL locks. Idle CPU work is
+    limited to a bounded empty bridge poll per client tick and idle runtime
+    threads; the intentional cost is resident CEF processes plus roughly one
+    2560x1418 BGRA host texture (13.85 MiB at the observed viewport). Closing the
+    retained runtime could save memory but would restore the first-F8 hitch. A
+    document visibility hook now stops a running Animation Lab when the screen
+    hides. The showcase also includes a persistent 0-100% WebScreen opacity
+    slider that exercises the Direct premultiplied-alpha world reveal while
+    remaining recoverable at 0%.
+
     Native CEF144 lifecycle smoke, Java/NeoForge tests, frontend/all-target
     builds, direct class-path startup, bundled Vue loading, renderer bootstrap,
     CefQuery transport and Java handshake passed. The user also observed the

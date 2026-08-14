@@ -96,3 +96,28 @@ during client loading rather than on the first F8. External BeginFrame requests
 use the configured Direct target instead of blindly following a 180+ Hz game
 render clock; the game signal rate, browser rAF callbacks, and newly published
 GPU generations remain separate metrics and must not be labeled as one FPS.
+
+## Hidden idle footprint and opacity control
+
+After prewarm completes, the retained browser is hidden with `WasHidden(true)`
+and the Java lifecycle stops issuing external BeginFrame requests. In that
+state there is no continuous accelerated paint, host `CopyResource`, or WGL
+lock/unlock work. The remaining steady-state work is one bounded empty bridge
+poll per client tick plus idle CEF/helper and loopback-server threads. This is
+expected to have very small CPU/frame-time cost, but exact host CPU and memory
+remain an interactive measurement rather than a claimed benchmark.
+
+The deliberate idle tradeoff is memory. At the observed 2560x1418 viewport, one
+BGRA mailbox texture is 14,520,320 bytes (13.85 MiB); the active three-slot host
+mailbox can reach 41.54 MiB before CEF compositor/shared-texture allocations.
+Releasing the retained browser or textures after a timeout could reclaim that
+memory, but would restore the cold first-F8 initialization hitch. The current
+proof therefore favors fast resume. The playground now also stops a running
+Animation Lab when CEF hides the document, preventing its diagnostic interval
+from remaining active after ESC.
+
+The normal showcase exposes a fixed `WebScreen opacity` slider from 0 to 100%.
+It applies one group opacity to the page background and UI while leaving the
+control itself visible at 0%, so the user can always restore it. In Direct CEF
+this reveals the live Minecraft world through the already verified
+premultiplied-alpha path; final visual appearance remains a manual F8 check.
