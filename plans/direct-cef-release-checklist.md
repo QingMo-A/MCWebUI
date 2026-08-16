@@ -43,10 +43,16 @@ These steps are intentionally **not executed by the current checkpoint**:
    `-Publish`. Do not construct an ad-hoc `gh release create` command. The
    operator fixes the repository, tag, target source commit, filename, size,
    hash, title, and notes from the tracked lock; refuses collisions and
-   `--clobber`; and verifies the downloaded remote asset after upload.
+   `--clobber`; resolves the actual remote tag target (lightweight or annotated)
+   and requires it to equal the lock's Runtime source SHA; and verifies the
+   downloaded remote asset after upload. Tag provenance or asset verification
+   failure is an immutable-release incident: stop for manual investigation and
+   do not delete, move, overwrite, or recreate the remote state automatically.
 4. Require the operator to report the exact tag, Release URL, asset URL, size,
-   and downloaded remote SHA. It uploads only the frozen ZIP; do not perform a
-   second manual upload or rebuild after calculating its identity.
+   resolved remote source commit, and downloaded remote SHA. It may print
+   `OFFICIAL RUNTIME R1 RELEASE PUBLISHED` only after both provenance and asset
+   SHA pass. It uploads only the frozen ZIP; do not perform a second manual
+   upload or rebuild after calculating its identity.
 5. Retain the stable HTTPS asset URL reported by the verified Release.
 6. Re-run `generate-release-descriptor.ps1` against the exact uploaded ZIP with the same artifact revision and final URL.
 7. Compare the regenerated descriptor's package size/SHA/runtime payload identity with the release report. A mismatch stops the release.

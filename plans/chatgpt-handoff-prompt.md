@@ -496,6 +496,13 @@ branch is implemented but remains unauthorized and unexecuted. Never bypass it
 with an ad-hoc `gh release create`, and never run `-Publish` without explicit
 user authorization.
 
+Formal publication success additionally requires remote source provenance: the
+operator must resolve `refs/tags/direct-cef-runtime-r1` from `origin`, prefer the
+peeled `^{}` commit for an annotated tag, and require the result to equal
+`740958afd63183e28e5b4d8168178ab7fb728d19`. This is separate from the frozen
+asset SHA gate. Unresolved/mismatched provenance or remote asset verification
+must fail without automatic deletion, overwrite, re-upload, or `--clobber`.
+
 ### Current checkpoint 19: Direct compatibility and source candidate
 
 Direct CEF now has two pre-runtime gates: a pure Windows/x86_64 static check and

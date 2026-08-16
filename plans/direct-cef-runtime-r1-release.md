@@ -70,6 +70,18 @@ published asset to a fresh temporary path for size/SHA verification. A remote
 verification failure requires manual investigation and is never auto-deleted or
 overwritten.
 
+Publication success also requires source provenance verification from the
+actual remote `origin` tag. The operator resolves both lightweight tags (direct
+ref) and annotated tags (peeled `^{}` ref, preferred when present), then requires
+the final 40-character commit to equal the lock's Runtime source SHA
+`740958afd63183e28e5b4d8168178ab7fb728d19`. Empty, duplicate, malformed, or
+mismatched results fail with `REMOTE_TAG_TARGET_UNRESOLVED` or
+`REMOTE_TAG_TARGET_MISMATCH` before any success message. Release metadata is
+validated with that provenance as one state gate; the downloaded asset SHA
+remains a separate final gate. The operator removes only its own remote-download
+temporary directory in `finally`; cleanup failure is a warning and never hides
+the actual publication/verification failure or touches the input ZIP.
+
 ## Entrypoints
 
 | Entrypoint | Size | SHA-256 |
