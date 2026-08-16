@@ -36,11 +36,20 @@ These steps are intentionally **not executed by the current checkpoint**:
    `FROZEN RUNTIME UPLOAD PRECHECK: PASS`. The verifier reads the tracked R1
    lock and performs no build, repack, extraction-to-runtime, or mutation. If it
    fails, stop the release; do not rebuild replacement bytes and continue.
-2. With explicit user authorization, create the runtime-only tag/GitHub Release.
-3. Upload exactly the previously verified deterministic ZIP; do not rebuild it after calculating its identity.
-4. Obtain the final HTTPS asset URL.
-5. Re-run `generate-release-descriptor.ps1` against the exact uploaded ZIP with the same artifact revision and final URL.
-6. Compare the regenerated descriptor's package size/SHA/runtime payload identity with the release report. A mismatch stops the release.
+2. Run `publish-runtime-r1.ps1 -Path <frozen-r1.zip>` without `-Publish` and
+   require `RUNTIME R1 RELEASE DRY RUN PASS` plus
+   `NO REMOTE CHANGES WERE MADE`.
+3. Only with explicit user authorization, rerun the same guarded operator with
+   `-Publish`. Do not construct an ad-hoc `gh release create` command. The
+   operator fixes the repository, tag, target source commit, filename, size,
+   hash, title, and notes from the tracked lock; refuses collisions and
+   `--clobber`; and verifies the downloaded remote asset after upload.
+4. Require the operator to report the exact tag, Release URL, asset URL, size,
+   and downloaded remote SHA. It uploads only the frozen ZIP; do not perform a
+   second manual upload or rebuild after calculating its identity.
+5. Retain the stable HTTPS asset URL reported by the verified Release.
+6. Re-run `generate-release-descriptor.ps1` against the exact uploaded ZIP with the same artifact revision and final URL.
+7. Compare the regenerated descriptor's package size/SHA/runtime payload identity with the release report. A mismatch stops the release.
 
 ## Final NeoForge artifact
 

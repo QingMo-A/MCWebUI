@@ -488,6 +488,14 @@ Any official Runtime R1 upload must first pass
 frozen ZIP and tracked `plans/direct-cef-runtime-r1-lock.json`; verifier failure
 means release STOP, not rebuild-and-retry with different bytes.
 
+The guarded operator is
+`scripts/direct-cef-runtime/publish-runtime-r1.ps1`. With no `-Publish` it is
+always a dry run and performs no remote mutation; the real dry run passed on
+operator commit `11a865a0e98720e0aac078e35ca6e2e8422e372f`. Its `-Publish`
+branch is implemented but remains unauthorized and unexecuted. Never bypass it
+with an ad-hoc `gh release create`, and never run `-Publish` without explicit
+user authorization.
+
 ### Current checkpoint 19: Direct compatibility and source candidate
 
 Direct CEF now has two pre-runtime gates: a pure Windows/x86_64 static check and

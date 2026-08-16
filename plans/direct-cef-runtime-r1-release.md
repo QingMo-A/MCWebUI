@@ -50,6 +50,26 @@ Here, file count `241` means the distributed `runtime.json.files[]` payload;
 the ZIP has exactly one additional entry, `runtime.json`. A failure stops the
 release and does not authorize rebuilding a substitute.
 
+The guarded operator is
+`scripts/direct-cef-runtime/publish-runtime-r1.ps1`. Its default mode is a
+side-effect-free dry run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\direct-cef-runtime\publish-runtime-r1.ps1 `
+  -Path <exact-frozen-r1-zip>
+```
+
+It always runs the frozen verifier first, then requires a clean tracked tree,
+the exact upstream repository, authenticated `gh`, and no local/remote tag,
+Release, or asset collision. Only an explicitly user-authorized invocation with
+`-Publish` can enter the mutation branch. That branch targets the runtime source
+commit recorded by the lock, never the later operator/docs HEAD; rechecks local
+bytes immediately before mutation; never uses `--clobber`; and downloads the
+published asset to a fresh temporary path for size/SHA verification. A remote
+verification failure requires manual investigation and is never auto-deleted or
+overwritten.
+
 ## Entrypoints
 
 | Entrypoint | Size | SHA-256 |
@@ -89,6 +109,8 @@ license/notices were included in the frozen payload.
 - Independent binary consumer: **PASS**
 - Frozen verifier synthetic failure matrix: **PASS (11/11)**
 - Exact local frozen ZIP upload precheck: **PASS**
+- Guarded operator pure/synthetic tests: **PASS (10/10)**
+- Real guarded operator dry run: **PASS / NO REMOTE CHANGES**
 
 The standalone native smoke has no Minecraft WGL context, so its interop status
 is expected to be unsupported. The separate real Minecraft compatibility run
@@ -106,6 +128,8 @@ AMD and Intel are not verified and no CPU fallback exists.
 - Final configured descriptor: `NOT GENERATED`
 - REAL_RELEASE: `NOT RUN`
 - Manual Setup acceptance against the official asset: `NOT RUN / READY`
+- Guarded operator default: `DRY RUN`
+- Guarded operator `-Publish`: `NOT AUTHORIZED / NOT RUN`
 
 SHA-256 pins content identity and integrity; it does not by itself prove
 publisher authenticity. The future JAR-owned descriptor supplies the trusted
