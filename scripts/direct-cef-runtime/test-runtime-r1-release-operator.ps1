@@ -44,6 +44,16 @@ function Invoke-ExpectedFailure([string]$Name, [string]$Path, [string]$Code) {
     Write-Host "PASS $Name -> $Code"
 }
 
+function Expect-ScriptThrow([string]$Name, [string]$Code, [scriptblock]$Action) {
+    try {
+        & $Action
+        throw "Expected $Code"
+    } catch {
+        if ($_.Exception.Message -notmatch [regex]::Escape($Code)) { throw }
+    }
+    Write-Host "PASS $Name -> $Code"
+}
+
 $temp = Join-Path $env:TEMP ('mcwebui-r1-operator-tests-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp | Out-Null
 try {
@@ -67,11 +77,61 @@ try {
         $plan.Arguments -contains '--clobber') { throw 'Frozen identity publish plan mismatch' }
     Write-Host 'PASS exact frozen identity publish plan without --clobber'
 
+    foreach ($identity in @([string]$lock.runtime.cefVersion, [string]$lock.runtime.chromiumVersion,
+        [string]$lock.runtime.platform, [string]$lock.runtime.arch, [string]$lock.artifact.revision)) {
+        if ($plan.Notes -notmatch [regex]::Escape($identity)) { throw "Release notes do not derive identity '$identity' from lock" }
+    }
+    Write-Host 'PASS release notes identity derived from lock'
+
+    $expected = ([string]$lock.sourceGitSha).ToLowerInvariant()
+    $objectSha = 'a' * 40
+    $lightweight = Resolve-RuntimeR1RemoteTagTarget -Tag $plan.Tag `
+        -LsRemoteOutput "$expected`trefs/tags/$($plan.Tag)"
+    if ($lightweight -cne $expected) { throw 'Lightweight tag target resolution failed' }
+    Write-Host 'PASS lightweight tag target resolution'
+    $annotated = Resolve-RuntimeR1RemoteTagTarget -Tag $plan.Tag `
+        -LsRemoteOutput "$objectSha`trefs/tags/$($plan.Tag)`n$expected`trefs/tags/$($plan.Tag)^{}"
+    if ($annotated -cne $expected) { throw 'Annotated tag target resolution failed' }
+    Write-Host 'PASS annotated tag target resolution'
+
+    $releaseData = [pscustomobject]@{
+        tagName=$plan.Tag; url='https://example.invalid/release'
+        assets=@([pscustomobject]@{name=$plan.Asset; size=$plan.Size; url='https://example.invalid/asset'})
+    }
+    $verifiedAsset = Assert-RuntimeR1PublishedState -ReleaseData $releaseData -Plan $plan -RemoteTagCommit $expected
+    if ($verifiedAsset.name -cne $plan.Asset) { throw 'Published-state asset result mismatch' }
+    Write-Host 'PASS published state metadata and provenance'
+
+    Expect-ScriptThrow 'wrong lightweight target' 'REMOTE_TAG_TARGET_MISMATCH' {
+        $wrong = Resolve-RuntimeR1RemoteTagTarget -Tag $plan.Tag -LsRemoteOutput "$('b' * 40)`trefs/tags/$($plan.Tag)"
+        Assert-RuntimeR1PublishedState -ReleaseData $releaseData -Plan $plan -RemoteTagCommit $wrong
+    }
+    Expect-ScriptThrow 'wrong annotated dereference' 'REMOTE_TAG_TARGET_MISMATCH' {
+        $wrong = Resolve-RuntimeR1RemoteTagTarget -Tag $plan.Tag `
+            -LsRemoteOutput "$objectSha`trefs/tags/$($plan.Tag)`n$('b' * 40)`trefs/tags/$($plan.Tag)^{}"
+        Assert-RuntimeR1PublishedState -ReleaseData $releaseData -Plan $plan -RemoteTagCommit $wrong
+    }
+    Expect-ScriptThrow 'empty remote tag result' 'REMOTE_TAG_TARGET_UNRESOLVED' {
+        Resolve-RuntimeR1RemoteTagTarget -Tag $plan.Tag -LsRemoteOutput ''
+    }
+    Expect-ScriptThrow 'multiple remote tag refs' 'REMOTE_TAG_TARGET_UNRESOLVED' {
+        Resolve-RuntimeR1RemoteTagTarget -Tag $plan.Tag `
+            -LsRemoteOutput "$expected`trefs/tags/$($plan.Tag)`n$expected`trefs/tags/$($plan.Tag)"
+    }
+    Expect-ScriptThrow 'published tag metadata mismatch' 'RELEASE_METADATA_MISMATCH' {
+        $badRelease = [pscustomobject]@{tagName='wrong'; assets=$releaseData.assets}
+        Assert-RuntimeR1PublishedState -ReleaseData $badRelease -Plan $plan -RemoteTagCommit $expected
+    }
+    Expect-ScriptThrow 'published asset size mismatch' 'REMOTE_ASSET_VERIFICATION_FAILED' {
+        $badRelease = [pscustomobject]@{tagName=$plan.Tag; assets=@([pscustomobject]@{name=$plan.Asset; size=1})}
+        Assert-RuntimeR1PublishedState -ReleaseData $badRelease -Plan $plan -RemoteTagCommit $expected
+    }
+
     Invoke-ExpectedFailure 'missing ZIP' (Join-Path $temp 'missing.zip') 'FILE_NOT_FOUND'
     $bad = Join-Path $temp ([string]$lock.artifact.filename)
     [IO.File]::WriteAllText($bad, 'not frozen bytes', [Text.UTF8Encoding]::new($false))
     Invoke-ExpectedFailure 'bad frozen ZIP' $bad 'SIZE_MISMATCH'
-    Write-Host 'GUARDED RUNTIME RELEASE OPERATOR TESTS: PASS (10/10)'
+    Write-Host 'GUARDED RUNTIME RELEASE OPERATOR TESTS: PASS (20/20)'
 } finally {
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }

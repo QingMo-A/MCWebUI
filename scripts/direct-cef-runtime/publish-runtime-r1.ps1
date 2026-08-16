@@ -101,27 +101,38 @@ $published = Invoke-Captured $ghCommand.Source @('release', 'view', $plan.Tag, '
     '--json', 'tagName,url,assets')
 if ($published.ExitCode -ne 0) { throw "REMOTE_RELEASE_VERIFICATION_FAILED: $($published.Output)" }
 $publishedData = $published.Output | ConvertFrom-Json
-$asset = @($publishedData.assets | Where-Object { $_.name -ceq $plan.Asset })
-if ($publishedData.tagName -cne $plan.Tag -or $asset.Count -ne 1 -or [int64]$asset[0].size -ne $plan.Size) {
-    throw 'REMOTE_ASSET_VERIFICATION_FAILED: tag/name/size mismatch; investigate manually, do not delete or overwrite'
-}
+
+$publishedTag = Invoke-Captured $gitCommand.Source @('-C', $repoRoot, 'ls-remote', '--tags', 'origin',
+    "refs/tags/$($plan.Tag)", "refs/tags/$($plan.Tag)^{}")
+if ($publishedTag.ExitCode -ne 0) { throw "REMOTE_TAG_TARGET_UNRESOLVED: $($publishedTag.Output)" }
+$remoteTagCommit = Resolve-RuntimeR1RemoteTagTarget -LsRemoteOutput $publishedTag.Output -Tag $plan.Tag
+$asset = Assert-RuntimeR1PublishedState -ReleaseData $publishedData -Plan $plan -RemoteTagCommit $remoteTagCommit
 
 $downloadRoot = Join-Path $env:TEMP ('mcwebui-runtime-r1-remote-verify-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $downloadRoot | Out-Null
-$download = Invoke-Captured $ghCommand.Source @('release', 'download', $plan.Tag, '--repo', $Repository,
-    '--pattern', $plan.Asset, '--dir', $downloadRoot)
-if ($download.ExitCode -ne 0) { throw "REMOTE_ASSET_VERIFICATION_FAILED: download failed: $($download.Output)" }
-$remoteFile = Join-Path $downloadRoot $plan.Asset
-$remoteHash = if (Test-Path -LiteralPath $remoteFile -PathType Leaf) {
-    (Get-FileHash -LiteralPath $remoteFile -Algorithm SHA256).Hash.ToUpperInvariant()
-} else { '' }
-if ($remoteHash -ne $plan.Sha256) {
-    throw 'REMOTE_ASSET_VERIFICATION_FAILED: downloaded SHA mismatch; investigate manually, do not delete or overwrite'
+try {
+    New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+    $download = Invoke-Captured $ghCommand.Source @('release', 'download', $plan.Tag, '--repo', $Repository,
+        '--pattern', $plan.Asset, '--dir', $downloadRoot)
+    if ($download.ExitCode -ne 0) { throw "REMOTE_ASSET_VERIFICATION_FAILED: download failed: $($download.Output)" }
+    $remoteFile = Join-Path $downloadRoot $plan.Asset
+    $remoteHash = if (Test-Path -LiteralPath $remoteFile -PathType Leaf) {
+        (Get-FileHash -LiteralPath $remoteFile -Algorithm SHA256).Hash.ToUpperInvariant()
+    } else { '' }
+    if ($remoteHash -ne $plan.Sha256) {
+        throw 'REMOTE_ASSET_VERIFICATION_FAILED: downloaded SHA mismatch; investigate manually, do not delete or overwrite'
+    }
+} finally {
+    if (Test-Path -LiteralPath $downloadRoot) {
+        try { Remove-Item -LiteralPath $downloadRoot -Recurse -Force -ErrorAction Stop }
+        catch { Write-Warning "Remote verification temp cleanup failed: $($_.Exception.Message)" }
+    }
 }
 
 Write-Host 'OFFICIAL RUNTIME R1 RELEASE PUBLISHED'
 Write-Host "Tag: $($plan.Tag)"
+Write-Host "Remote tag target: $remoteTagCommit"
+Write-Host 'Runtime source provenance: VERIFIED'
 Write-Host "Release URL: $($publishedData.url)"
-Write-Host "Asset URL: $($asset[0].url)"
+Write-Host "Asset URL: $($asset.url)"
 Write-Host "Size: $($plan.Size)"
-Write-Host "Remote SHA: $remoteHash"
+Write-Host "Asset SHA: $remoteHash"
