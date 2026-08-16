@@ -1,6 +1,6 @@
 # Direct CEF runtime release checklist
 
-Status: **RUNTIME R1 INPUTS FROZEN / NOT PUBLISHED** (2026-08-16).
+Status: **RUNTIME R1 PUBLISHED / MOD NOT PUBLISHED** (2026-08-16).
 
 This is the operator checklist for publishing the external Direct CEF runtime and then a MCWebUI NeoForge Developer Preview. It does not authorize creating a tag, GitHub Release, uploading an asset, or publishing a mod artifact. Those actions require explicit user approval.
 
@@ -30,7 +30,7 @@ Any change to `mcwebui-direct-cef.dll`, helper, CEF files, resources, or packagi
 
 ## Authorized runtime release step
 
-These steps are intentionally **not executed by the current checkpoint**:
+These steps were executed for Runtime R1 under explicit user authorization:
 
 1. Run `verify-runtime-release-inputs.ps1 -Path <frozen-r1.zip>` and require
    `FROZEN RUNTIME UPLOAD PRECHECK: PASS`. The verifier reads the tracked R1
@@ -92,12 +92,14 @@ These steps are intentionally **not executed by the current checkpoint**:
 - manual Setup Screen install acceptance passes;
 - existing Direct WebScreen regression passes.
 
-Current verdict: **RELEASE READY / WAITING FOR OFFICIAL ASSET**. The Developer Preview gate is not yet satisfied.
+Current verdict: **OFFICIAL RUNTIME AVAILABLE / MANUAL SETUP ACCEPTANCE REQUIRED**.
+The runtime-only Release, pinned descriptor, REAL_RELEASE download,
+import/discovery, and NeoForge hidden-prewarm gates pass. The Developer Preview
+mod is not published and its manual Setup Screen gate remains open.
 
-The exact Runtime R1 inputs and hashes are frozen in
-`plans/direct-cef-runtime-r1-release.md`. Production URL remains unconfigured,
-and no GitHub Release, tag, or asset exists. The next action requires explicit
-user authorization.
+The exact Runtime R1 inputs, public URL, provenance, and hashes are recorded in
+`plans/direct-cef-runtime-r1-release.md`. Runtime R1 is immutable; do not
+overwrite or recreate it.
 
 ## Source Developer Preview candidate checkpoint
 
@@ -116,7 +118,6 @@ user authorization.
   `-PmcwebuiVersion=0.1.0-preview.1` from a clean tracked worktree.
 - Audit `candidate-report.json`, `checksums.txt`, and the copied NeoForge JAR.
   The report must contain the exact Git SHA, SHA-256, zero native leakage,
-  `productionRuntimeSource=UNCONFIGURED`, and publication blocked waiting for
-  the official runtime.
+  `productionRuntimeSource=CONFIGURED`, and zero native leakage.
 - Candidate output is local evidence only. Do not create a tag, release, asset,
   Maven publication, or mod distribution without explicit user authorization.

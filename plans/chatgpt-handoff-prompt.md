@@ -107,7 +107,7 @@ Checkpoint date: **2026-08-14**
 
 Historical branch HEAD before this handoff file was added: `2a6fb16f5586e2809c3313d943b01fee8402c3dd` (`clarify neoforge scope checkpoint`). Always re-fetch current `bridge` before acting.
 
-Runtime distribution state: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / RELEASE PIPELINE READY / PRODUCTION SOURCE NOT CONFIGURED** (checkpoints 15-18 below).
+Runtime distribution state: **PHASE A-B-C IMPLEMENTED / RUNTIME R1 PUBLISHED / REAL_RELEASE PASS / MOD NOT PUBLISHED** (checkpoint 20 below).
 
 Phase 1 status in the plan: **IMPLEMENTED / PARTIALLY RUNTIME VERIFIED (NeoForge-only bridge/showcase scope)**.
 
@@ -398,17 +398,14 @@ Important review findings at this checkpoint:
     repeated packaging was byte-identical. Its descriptor intentionally has no
     URL. No ZIP/runtime binaries were committed.
 
-    `test-first-run-install.ps1` distinguishes `LOCAL_FIXTURE` from
-    `REAL_RELEASE`. LOCAL_FIXTURE injects the local ZIP into the downloader,
-    then passed package verification, Phase B import, Phase A standard
-    discovery, real NeoForge bundled page, one Bridge handshake, and hidden
-    prewarm. REAL_RELEASE is **NOT CONFIGURED**, not PASS. Setup Screen visual
-    acceptance remains **READY FOR USER ACCEPTANCE**. Release ordering and the
-    `DIRECT CEF DEVELOPER PREVIEW READY` prerequisites are documented in
-    `plans/direct-cef-release-checklist.md`. Current status is **RELEASE
-    PIPELINE READY / WAITING FOR OFFICIAL ASSET**; creating a tag/Release,
-    uploading the ZIP, embedding the final descriptor, REAL_RELEASE acceptance,
-    and publication all still require explicit user authorization.
+    Runtime R1 was published on 2026-08-16 as `direct-cef-runtime-r1`, targeting
+    source `740958afd63183e28e5b4d8168178ab7fb728d19`. The public asset is pinned by
+    `gradle/direct-cef-runtime-r1.release.json`; an anonymous HTTPS download
+    reproduced the frozen size and SHA. REAL_RELEASE passed fresh download,
+    import and discovery, followed by NeoForge bundled-page, Bridge handshake,
+    accelerated interop and hidden prewarm. Setup Screen visual acceptance
+    remains **MANUAL USER ACCEPTANCE REQUIRED**. The MCWebUI mod was not
+    published.
 
 ### Near-term project direction
 
@@ -464,7 +461,7 @@ Do not automatically implement Forge just to achieve symmetry if the user curren
 
 When a major milestone finishes, update this handoff file's **Current checkpoint** so a future conversation can resume quickly.
 
-### Current checkpoint 20: Runtime R1 inputs frozen
+### Current checkpoint 20: Runtime R1 published
 
 The exact external Direct CEF Runtime R1 was clean-built from source commit
 `740958afd63183e28e5b4d8168178ab7fb728d19`, assembled with CEF `LICENSE.txt`
@@ -477,11 +474,13 @@ The 241-file ZIP is named
 164216473 compressed bytes and 394723009 unpacked payload bytes. Full immutable
 details are in `plans/direct-cef-runtime-r1-release.md`.
 
-This checkpoint is **FROZEN / NOT PUBLISHED**. Production URL is UNCONFIGURED;
-GitHub Release/tag/asset do not exist; REAL_RELEASE and official Setup acceptance
-are not run. Do not rebuild or substitute the ZIP. The next action requires
-explicit authorization to create `direct-cef-runtime-r1` and upload the exact
-frozen artifact.
+This checkpoint is **PUBLISHED**. The runtime-only GitHub Release/tag is
+`direct-cef-runtime-r1`; the asset URL is recorded in
+`gradle/direct-cef-runtime-r1.release.json`. Remote tag provenance resolves to
+the frozen source SHA, public downloaded bytes match the frozen size/SHA, and
+REAL_RELEASE plus the NeoForge hidden-prewarm runtime markers pass. Do not
+rebuild, substitute, overwrite, delete, or re-upload Runtime R1. Manual Setup
+Screen visual acceptance remains open, and the MCWebUI mod was not published.
 
 Any official Runtime R1 upload must first pass
 `scripts/direct-cef-runtime/verify-runtime-release-inputs.ps1` against the exact
@@ -489,12 +488,9 @@ frozen ZIP and tracked `plans/direct-cef-runtime-r1-lock.json`; verifier failure
 means release STOP, not rebuild-and-retry with different bytes.
 
 The guarded operator is
-`scripts/direct-cef-runtime/publish-runtime-r1.ps1`. With no `-Publish` it is
-always a dry run and performs no remote mutation; the real dry run passed on
-operator commit `11a865a0e98720e0aac078e35ca6e2e8422e372f`. Its `-Publish`
-branch is implemented but remains unauthorized and unexecuted. Never bypass it
-with an ad-hoc `gh release create`, and never run `-Publish` without explicit
-user authorization.
+`scripts/direct-cef-runtime/publish-runtime-r1.ps1`. Its authorized `-Publish`
+branch was executed once for R1. Never run it again for the existing tag/asset,
+bypass it with ad-hoc release mutation, or use overwrite/clobber behavior.
 
 Formal publication success additionally requires remote source provenance: the
 operator must resolve `refs/tags/direct-cef-runtime-r1` from `origin`, prefer the

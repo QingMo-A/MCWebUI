@@ -1,8 +1,8 @@
 # Direct CEF runtime distribution plan
 
-Status: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / RUNTIME R1 INPUTS FROZEN / NOT PUBLISHED** (2026-08-16).
+Status: **PHASE A-B-C IMPLEMENTED / RUNTIME R1 PUBLISHED / MOD NOT PUBLISHED** (2026-08-16).
 
-This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory; Phase B adds safe offline package import (staging, validation, atomic publish, repair/rollback) and a Minecraft setup screen. Phase C has a tested descriptor/downloader/install foundation and release preparation/embedding path, but MCWebUI deliberately ships **no production download descriptor, URL, or official runtime package yet**. Automatic installation is therefore not currently available to players.
+This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements trusted discovery and validation, Phase B adds safe offline import, and Phase C provides the pinned HTTPS downloader/install flow. Runtime R1 and its project-owned descriptor are now configured for NeoForge; the MCWebUI mod itself is not published.
 
 ## Phase A implementation checkpoint
 
@@ -25,7 +25,7 @@ An invalid explicit override is authoritative and does not fall through to the s
 
 `scripts/direct-cef-runtime/generate-runtime-manifest.ps1` creates the deterministic Phase A manifest for a prepared runtime directory. It is a consistency tool, not a signer: SHA-256 detects mismatched content but does not establish a trusted publisher. The proof runner assembles a temporary standard layout by default and also has an `Override` mode; both pass through the same validator and loader.
 
-**MANUAL PREINSTALLED DIRECTORY SUPPORTED. OFFLINE RUNTIME PACKAGE IMPORT SUPPORTED. DOWNLOAD CORE IMPLEMENTED, BUT AUTOMATIC DOWNLOAD IS NOT CONFIGURED.**
+**MANUAL PREINSTALLED DIRECTORY, OFFLINE IMPORT, AND PINNED RUNTIME R1 DOWNLOAD ARE SUPPORTED.**
 
 ## Phase B implementation checkpoint
 
@@ -116,7 +116,7 @@ path.
 |---|---|
 | PREINSTALLED DIRECTORY | SUPPORTED |
 | OFFLINE RUNTIME PACKAGE IMPORT | SUPPORTED |
-| AUTOMATIC DOWNLOAD | CORE IMPLEMENTED / PRODUCTION SOURCE NOT CONFIGURED |
+| AUTOMATIC DOWNLOAD | RUNTIME R1 CONFIGURED / REAL_RELEASE PASS |
 | AUTO UPDATE | NOT IMPLEMENTED |
 
 ## Phase C core checkpoint
@@ -159,8 +159,8 @@ from `DirectCefRuntimeReleaseCatalog` at
 `META-INF/mcwebui/direct-cef-runtime-release.json`. A missing resource is the
 supported development/unconfigured state. A present malformed, wrong-runtime,
 or unsafe descriptor is logged as a BUILD/RELEASE CONFIG ERROR; automatic
-download stays unavailable and offline import remains available. This
-checkpoint intentionally bundles no descriptor.
+offline import remains available. NeoForge now bundles the validated Runtime R1
+descriptor; Forge does not.
 
 `scripts/direct-cef-runtime/generate-release-descriptor.ps1` accepts a complete
 Phase B ZIP plus an explicit artifact revision, revalidates the archive against
@@ -179,13 +179,12 @@ runtime/CEF/Chromium identity, four entrypoints, artifact revision, compressed
 and unpacked sizes, SHA-256, file count, and source Git SHA. Its report-only UTC
 timestamp never enters the deterministic ZIP.
 
-The NeoForge-only Gradle property
-`-PmcwebuiDirectCefReleaseDescriptor=<absolute-path>` validates a final
-configured descriptor with the production Java parser/requirement checks and
-then embeds it at the catalog resource path. Without the property, ordinary
-development and `buildAllTargets` builds succeed and contain no descriptor.
-Invalid descriptors fail the build; Forge is not forced to carry Direct
-backend release metadata.
+NeoForge now defaults to the project-owned Runtime R1 descriptor at
+`gradle/direct-cef-runtime-r1.release.json`. The optional
+`-PmcwebuiDirectCefReleaseDescriptor=<absolute-path>` remains an explicit build
+override. Both paths use the production Java parser/requirement checks before
+embedding the fixed catalog resource. Invalid descriptors fail the build;
+Forge carries no Direct backend release metadata.
 
 `scripts/direct-cef-runtime/test-first-run-install.ps1` has two explicit modes.
 `LOCAL_FIXTURE` injects the locally prepared ZIP as a downloader source without
@@ -195,7 +194,7 @@ hidden prewarm. `REAL_RELEASE` requires an actual configured HTTPS descriptor;
 without one it reports `NOT CONFIGURED`, never PASS. Release ordering and the
 Developer Preview gate are frozen in `plans/direct-cef-release-checklist.md`.
 
-### Phase C core verification (2026-08-14)
+### Historical Phase C core verification (2026-08-14; superseded by Runtime R1 publication)
 
 - release catalog tests cover absent, valid, explicitly unconfigured,
   malformed, wrong-runtime, invalid URL/size/SHA/schema, and strict build-time
@@ -212,9 +211,9 @@ Developer Preview gate are frozen in `plans/direct-cef-release-checklist.md`.
   standard instance, followed by a real NeoForge bundled-page start, one
   Bridge handshake, and hidden accelerated prewarm. The visible first draw
   remains a separate user action and was not claimed by this headless gate;
-- `REAL_RELEASE` reports `NOT CONFIGURED` because no official runtime asset or
-  production URL exists. No tag, GitHub Release, upload, or mod publication was
-  performed;
+- at that historical checkpoint `REAL_RELEASE` reported `NOT CONFIGURED` and no
+  remote release existed; the current Runtime R1 publication and acceptance
+  results above supersede only that release-state statement;
 
 - deterministic no-network tests cover descriptor parsing/missing/malformed and
   unsafe fields; exact success/import/rediscovery; short and oversized bodies;
@@ -232,9 +231,10 @@ Developer Preview gate are frozen in `plans/direct-cef-release-checklist.md`.
 - native CEF lifecycle smoke exited 0 with `ready=true`; local frontend
   typecheck/build plus common, Forge 1.20.1, and NeoForge 1.21.1 tests/builds
   passed; two built target JARs contained no Direct CEF DLL/EXE/PAK/ZIP payload;
-- production descriptor/source and real Internet download acceptance remain
-  deliberately **NOT CONFIGURED / NOT TESTED**. No release, tag, runtime upload,
-  or fake production URL was created.
+- Runtime R1 is published at the pinned GitHub HTTPS asset. REAL_RELEASE from a
+  fresh instance passed exact download, SHA, Phase B import and Phase A
+  discovery; the installed runtime then passed NeoForge bundled-page, Bridge,
+  accelerated interop and hidden-prewarm markers. The mod was not published.
 
 ### Phase B verification (2026-08-14)
 
@@ -699,7 +699,7 @@ The runtime package can be large without making every mod JAR large, and one ins
 
 ## Proposed implementation phases
 
-Current phase state: **Phase A-B IMPLEMENTED; Phase C CORE IMPLEMENTED; RELEASE PIPELINE READY; PRODUCTION SOURCE NOT CONFIGURED.**
+Current phase state: **Phase A-B-C IMPLEMENTED; RUNTIME R1 PUBLISHED; REAL_RELEASE PASS; MOD NOT PUBLISHED.**
 
 ### Phase A — manifest and discovery
 
@@ -728,8 +728,9 @@ This phase should be completed before relying on automatic downloading so there 
 - LOCAL_FIXTURE fresh-instance download/install acceptance: implemented and passed;
 - HTTPS-only streaming download, progress/cancel/retry foundation: implemented;
 - Phase B staging/import and integrity reuse: implemented;
-- official runtime package publication and production URL/size/SHA pin: pending;
-- real production HTTPS acceptance and any mirror/source policy: pending.
+- official Runtime R1 publication and production URL/size/SHA pin: completed;
+- real production HTTPS download/import/discovery acceptance: passed;
+- mirror/source expansion policy: not implemented.
 
 ### Phase D — pack/launcher integration
 
@@ -779,5 +780,6 @@ real-network acceptance. Manual offline import remains the supported path today.
 
 The byte-exact Runtime R1 dry-run package, entrypoint hashes, included notices,
 determinism evidence, and publication boundary are recorded in
-`plans/direct-cef-runtime-r1-release.md`. This freezes inputs only: its URL is
-`UNCONFIGURED`, REAL_RELEASE is not run, and no release/tag/upload is authorized.
+`plans/direct-cef-runtime-r1-release.md`. Runtime R1 is published and immutable;
+its URL and REAL_RELEASE evidence are recorded there. The MCWebUI mod is not
+published.

@@ -1,10 +1,10 @@
 # Direct CEF Runtime R1 release lock
 
-Status: **FROZEN / NOT PUBLISHED**
+Status: **PUBLISHED** (2026-08-16)
 
 This is the operator record for the exact external Runtime R1 artifact prepared
-on 2026-08-16. It records immutable inputs and evidence; it is not the runtime
-binary and does not authorize a tag, GitHub Release, upload, or mod publication.
+and published on 2026-08-16. It records immutable inputs and evidence; it is not
+the runtime binary and does not authorize publication of the MCWebUI mod.
 
 ## Source and identity
 
@@ -123,6 +123,15 @@ license/notices were included in the frozen payload.
 - Exact local frozen ZIP upload precheck: **PASS**
 - Guarded operator pure/synthetic tests: **PASS (10/10)**
 - Real guarded operator dry run: **PASS / NO REMOTE CHANGES**
+- Authorized guarded operator mutation: **CREATED tag, Release, and exact asset**
+- Operator-integrated `gh release download`: **INTERRUPTED after remote creation**
+  because this host's single transfer made no progress; no retry, deletion,
+  overwrite, or second publication was attempted
+- Independent anonymous public HTTPS download: **PASS**, reconstructed bytes
+  match the frozen size and SHA-256 exactly
+- Fresh-instance REAL_RELEASE HTTPS download/import/discovery: **PASS**
+- NeoForge use of that installed runtime: **PASS** for standard discovery,
+  bundled page, Bridge handshake, accelerated interop, and hidden prewarm
 
 The standalone native smoke has no Minecraft WGL context, so its interop status
 is expected to be unsupported. The separate real Minecraft compatibility run
@@ -131,23 +140,25 @@ AMD and Intel are not verified and no CPU fallback exists.
 
 ## Publication state
 
-- Recommended runtime-only tag/release name: `direct-cef-runtime-r1`
+- Runtime-only tag/release name: `direct-cef-runtime-r1`
 - Asset filename: exactly the frozen filename above
-- Production URL: `UNCONFIGURED`
-- GitHub Release: `NOT CREATED`
-- Git tag: `NOT CREATED`
-- Asset uploaded: `NO`
-- Final configured descriptor: `NOT GENERATED`
-- REAL_RELEASE: `NOT RUN`
-- Manual Setup acceptance against the official asset: `NOT RUN / READY`
-- Guarded operator default: `DRY RUN`
-- Guarded operator `-Publish`: `NOT AUTHORIZED / NOT RUN`
+- Production URL: `https://github.com/QingMo-A/MCWebUI/releases/download/direct-cef-runtime-r1/mcwebui-direct-cef-runtime-cef-144.0.33-cb4715c-windows-x86_64-1.zip`
+- GitHub Release: `https://github.com/QingMo-A/MCWebUI/releases/tag/direct-cef-runtime-r1`
+- Git tag: **CREATED**, remote target `740958afd63183e28e5b4d8168178ab7fb728d19`
+- Asset uploaded: **YES**, exactly one asset, `164216473` bytes
+- Remote digest: `sha256:6b9de0ef90869db7c5966a6307516a886eb15b1ac6ed14bdbfd987db912d4d6b`
+- Anonymous public HTTPS byte download: **PASS**, size and SHA match the lock
+- Final configured descriptor: `gradle/direct-cef-runtime-r1.release.json`
+- REAL_RELEASE download/import/discovery: **PASS** against a fresh instance
+- NeoForge standard discovery, bundled page, Bridge handshake, accelerated texture/interoperability and hidden prewarm: **PASS**
+- Manual Setup Screen visual acceptance: **MANUAL USER ACCEPTANCE REQUIRED**
+- MCWebUI mod publication: **NOT PERFORMED**
 
 SHA-256 pins content identity and integrity; it does not by itself prove
 publisher authenticity. The future JAR-owned descriptor supplies the trusted
 project pin, while GitHub HTTPS is only the transport.
 
-The only authorized next sequence is: create the exact runtime-only release,
-upload this exact ZIP, obtain the stable HTTPS URL, generate the final descriptor
-without changing size/hash, build the descriptor-bearing mod candidate, run
-REAL_RELEASE and manual Setup acceptance, and only then consider publication.
+Runtime R1 is immutable. Do not rebuild, replace, delete, or re-upload it. The
+remaining release work is manual Setup Screen acceptance and a separately
+authorized MCWebUI mod publication; no Modrinth, CurseForge, Maven, or mod
+release action occurred in this checkpoint.
