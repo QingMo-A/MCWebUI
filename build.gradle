@@ -10,9 +10,13 @@ node {
     nodeProjectDir = rootProject.projectDir
 }
 
+def resolvedMcwebuiVersion = providers.gradleProperty('mcwebuiVersion')
+        .orElse('0.1.0-SNAPSHOT')
+        .get()
+
 allprojects {
     group = 'dev.qingmo.mcwebui'
-    version = '0.1.0-SNAPSHOT'
+    version = resolvedMcwebuiVersion
 
     repositories {
         mavenCentral()
@@ -285,14 +289,16 @@ tasks.register('verifyConsumerSample') {
                 // cmd.exe needs the wrapper and staged repository quoted as one
                 // command because this workspace path contains a space.
                 String nestedCommand = "\"${wrapper.absolutePath}\" --no-daemon " +
-                        "-PmcwebuiConsumerRepo=\"${stagedRepo}\" clean build"
+                        "-PmcwebuiConsumerRepo=\"${stagedRepo}\" " +
+                        "-PmcwebuiVersion=\"${project.version}\" clean build"
                 commandLine 'cmd', '/d', '/c', nestedCommand
             }
         } else {
             exec {
                 workingDir(sample)
                 commandLine wrapper.absolutePath, '--no-daemon',
-                        '-PmcwebuiConsumerRepo=' + stagedRepo, 'clean', 'build'
+                        '-PmcwebuiConsumerRepo=' + stagedRepo,
+                        '-PmcwebuiVersion=' + project.version, 'clean', 'build'
             }
         }
         File consumerJar = fileTree(new File(sample, 'build/libs')).matching { include '*.jar' }.files.find { !it.name.endsWith('-sources.jar') }
@@ -312,6 +318,99 @@ tasks.register('verifyConsumerSample') {
             zip.close()
         }
         logger.lifecycle("Standalone consumer binary proof passed: ${consumerJar}")
+    }
+}
+
+def candidateDirectory = layout.buildDirectory.dir('release-candidate')
+def candidateTask = tasks.register('prepareDeveloperPreviewCandidate') {
+    group = 'verification'
+    description = 'Build and audit a non-SNAPSHOT source Developer Preview candidate without publishing it.'
+    dependsOn('frontendTypecheck', 'frontendBuild', 'testAllTargets', 'buildAllTargets',
+            'architectureCheck', 'verifyConsumerSample')
+    outputs.dir(candidateDirectory)
+    outputs.upToDateWhen { false }
+    doLast {
+        ByteArrayOutputStream statusOutput = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'status', '--porcelain', '--untracked-files=no'
+            standardOutput = statusOutput
+        }
+        String trackedStatus = statusOutput.toString('UTF-8').trim()
+        if (!trackedStatus.isEmpty()) {
+            throw new GradleException('Developer Preview candidate requires a clean tracked worktree')
+        }
+
+        ByteArrayOutputStream shaOutput = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'rev-parse', 'HEAD'
+            standardOutput = shaOutput
+        }
+        String sourceSha = shaOutput.toString('UTF-8').trim()
+        File sourceJar = project(':targets:neoforge-1.21.1').tasks.named('jar').get().archiveFile.get().asFile
+        if (!sourceJar.isFile()) throw new GradleException("Missing NeoForge candidate JAR: ${sourceJar}")
+
+        File output = candidateDirectory.get().asFile
+        project.delete(output)
+        output.mkdirs()
+        File candidateJar = new File(output, sourceJar.name)
+        project.copy { from(sourceJar); into(output) }
+
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance('SHA-256')
+        candidateJar.withInputStream { input ->
+            byte[] buffer = new byte[1024 * 1024]
+            for (int read = input.read(buffer); read >= 0; read = input.read(buffer)) {
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        String jarSha256 = digest.digest().collect { String.format('%02x', it & 0xff) }.join()
+
+        java.util.zip.ZipFile zip = new java.util.zip.ZipFile(candidateJar)
+        int nativeLeakage
+        boolean releaseDescriptorPresent
+        try {
+            def entries = zip.entries().collect { it.name }
+            nativeLeakage = entries.count { String name ->
+                String lower = name.toLowerCase(Locale.ROOT)
+                lower.endsWith('.dll') || lower.endsWith('.exe') || lower.endsWith('.pak')
+                        || lower.endsWith('.zip') || lower.contains('libcef')
+                        || lower.contains('chrome_elf') || lower.contains('cef_binary_')
+            }
+            releaseDescriptorPresent = entries.contains('META-INF/mcwebui/direct-cef-runtime-release.json')
+        } finally {
+            zip.close()
+        }
+        if (nativeLeakage != 0) throw new GradleException("Candidate JAR native/runtime leakage=${nativeLeakage}")
+
+        boolean sourceConfigured = releaseDescriptorPresent
+        Map<String, Object> report = new LinkedHashMap<>()
+        report.put('mcwebuiVersion', project.version.toString())
+        report.put('sourceGitSha', sourceSha)
+        report.put('trackedWorktreeClean', true)
+        report.put('apiVersion', 1)
+        report.put('target', 'neoforge-1.21.1')
+        report.put('jar', [filename: candidateJar.name, size: candidateJar.length(), sha256: jarSha256])
+        report.put('backendDefault', 'MCEF')
+        report.put('direct', [os: 'windows', arch: 'x86_64',
+                requiredGraphicsInterop: 'WGL_NV_DX_interop + WGL_NV_DX_interop2',
+                currentAutomatedVendorEvidence: 'NVIDIA-only'])
+        report.put('runtimeDistribution', [phaseA: 'implemented', phaseB: 'implemented', phaseCCore: 'implemented'])
+        report.put('productionRuntimeSource', sourceConfigured ? 'CONFIGURED' : 'UNCONFIGURED')
+        report.put('consumerBinaryProof', 'PASS')
+        report.put('nativeRuntimeLeakage', nativeLeakage)
+        report.put('publication', sourceConfigured
+                ? 'BLOCKED_PENDING_REAL_RELEASE_ACCEPTANCE'
+                : 'BLOCKED_WAITING_FOR_OFFICIAL_RUNTIME')
+        new File(output, 'candidate-report.json').setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(report)) + System.lineSeparator(), 'UTF-8')
+        new File(output, 'checksums.txt').setText(
+                "${jarSha256}  ${candidateJar.name}${System.lineSeparator()}", 'UTF-8')
+        logger.lifecycle("Developer Preview source candidate prepared: ${candidateJar}")
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (graph.hasTask(candidateTask.get()) && project.version.toString().toUpperCase(Locale.ROOT).contains('SNAPSHOT')) {
+        throw new GradleException('mcwebuiVersion must be a non-SNAPSHOT release candidate version')
     }
 }
 

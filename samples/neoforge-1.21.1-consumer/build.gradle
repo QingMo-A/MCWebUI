@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'dev.qingmo.mcwebui.samples'
-version = '0.1.0-SNAPSHOT'
+version = providers.gradleProperty('mcwebuiVersion').orElse('0.1.0-SNAPSHOT').get()
 
 repositories {
     mavenCentral()
@@ -21,7 +21,7 @@ java {
     }
 }
 
-def mcwebuiVersion = '0.1.0-SNAPSHOT'
+def mcwebuiVersion = providers.gradleProperty('mcwebuiVersion').orElse('0.1.0-SNAPSHOT').get()
 
 dependencies {
     // This is deliberately a binary Maven dependency.  The root verification
