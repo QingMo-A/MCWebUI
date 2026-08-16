@@ -97,6 +97,9 @@ The runtime-only Release, pinned descriptor, REAL_RELEASE download,
 import/discovery, and NeoForge hidden-prewarm gates pass. The Developer Preview
 mod is not published and its manual Setup Screen gate remains open.
 
+The isolated manual workflow and all-`NOT RUN` result table are maintained in
+`plans/direct-cef-manual-acceptance.md`.
+
 The exact Runtime R1 inputs, public URL, provenance, and hashes are recorded in
 `plans/direct-cef-runtime-r1-release.md`. Runtime R1 is immutable; do not
 overwrite or recreate it.

@@ -121,7 +121,7 @@ license/notices were included in the frozen payload.
 - Independent binary consumer: **PASS**
 - Frozen verifier synthetic failure matrix: **PASS (11/11)**
 - Exact local frozen ZIP upload precheck: **PASS**
-- Guarded operator pure/synthetic tests: **PASS (10/10)**
+- Guarded operator pure/synthetic tests: **PASS (20/20)** (re-run 2026-08-16)
 - Real guarded operator dry run: **PASS / NO REMOTE CHANGES**
 - Authorized guarded operator mutation: **CREATED tag, Release, and exact asset**
 - Operator-integrated `gh release download`: **INTERRUPTED after remote creation**

@@ -461,6 +461,20 @@ Do not automatically implement Forge just to achieve symmetry if the user curren
 
 When a major milestone finishes, update this handoff file's **Current checkpoint** so a future conversation can resume quickly.
 
+### Current checkpoint 21: Manual release acceptance harness ready
+
+`scripts/direct-cef-runtime/prepare-manual-acceptance.ps1` creates unique
+scenario roots below `build/manual-acceptance/` for fresh download,
+cancel/retry, offline import, invalid override, and already-installed Continue.
+The script never uses the player's normal `.minecraft`; supplied offline ZIPs
+must pass the frozen R1 verifier, and installed state is produced through the
+existing importer/validator proof rather than directory copying. A default-off
+NeoForge target-local developer hook opens the existing Setup Screen only after
+the normal Direct compatibility probe. It does not bypass catalog, discovery,
+validation, or backend selection. Full commands and the all-`NOT RUN` human
+checklist are in `plans/direct-cef-manual-acceptance.md`. Status is **HARNESS
+READY / USER ACCEPTANCE PENDING**; no visual PASS or mod publication is claimed.
+
 ### Current checkpoint 20: Runtime R1 published
 
 The exact external Direct CEF Runtime R1 was clean-built from source commit
@@ -513,5 +527,7 @@ accelerated mailbox generations, one registered interop slot, balanced lock/
 unlock, and zero failures. AMD/Intel remain not verified and there is no CPU
 fallback. The source-only `0.1.0-preview.1` candidate gate propagates the version
 through the independent consumer proof, rejects the default SNAPSHOT, audits the
-JAR, and records an exact source SHA/checksum. Production runtime source remains
-unconfigured and publication remains blocked pending explicit authorization.
+JAR, and records an exact source SHA/checksum. At checkpoint 19 the production
+runtime source was still unconfigured and publication was blocked. Checkpoint
+20 supersedes that historical release state: Runtime R1 is published and
+configured, while manual Setup/WebScreen acceptance remains the open mod gate.
