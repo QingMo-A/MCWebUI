@@ -1,0 +1,47 @@
+{
+  "lockVersion": 1,
+  "status": "FROZEN",
+  "sourceGitSha": "740958afd63183e28e5b4d8168178ab7fb728d19",
+  "runtime": {
+    "runtimeId": "cef-144.0.33-cb4715c",
+    "runtimeAbi": 1,
+    "cefVersion": "144.0.33",
+    "chromiumVersion": "144.0.7559.259",
+    "platform": "windows",
+    "arch": "x86_64"
+  },
+  "artifact": {
+    "revision": "1",
+    "filename": "mcwebui-direct-cef-runtime-cef-144.0.33-cb4715c-windows-x86_64-1.zip",
+    "size": 164216473,
+    "unpackedSize": 394723009,
+    "fileCount": 241,
+    "sha256": "6B9DE0EF90869DB7C5966A6307516A886EB15B1AC6ED14BDBFD987DB912D4D6B"
+  },
+  "entrypoints": {
+    "native": {
+      "path": "mcwebui-direct-cef.dll",
+      "size": 840192,
+      "sha256": "F144E0CFC25E6D00D7970060E564B2BA3E5A8CD8AAE34099EB3004837E6BA064"
+    },
+    "helper": {
+      "path": "mcwebui-cef-helper.exe",
+      "size": 731136,
+      "sha256": "B97EFDDA3421061F7652703BF7442FA0FBBAF8842B1F954B14A5ABE6E0AF68D2"
+    },
+    "cef": {
+      "path": "libcef.dll",
+      "size": 253349888,
+      "sha256": "5A5556425AD319735175BB6CA386813B73AD515D49081BDE6FC0423F034D8EBE"
+    },
+    "chromeElf": {
+      "path": "chrome_elf.dll",
+      "size": 1864704,
+      "sha256": "F2AD0E77044D360E72FE3101F9ACD11F302AF54BD97DB080694B3D5764543026"
+    }
+  },
+  "requiredNotices": [
+    "LICENSE.txt",
+    "CREDITS.html"
+  ]
+}
