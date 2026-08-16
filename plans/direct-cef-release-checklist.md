@@ -32,11 +32,15 @@ Any change to `mcwebui-direct-cef.dll`, helper, CEF files, resources, or packagi
 
 These steps are intentionally **not executed by the current checkpoint**:
 
-1. With explicit user authorization, create the runtime-only tag/GitHub Release.
-2. Upload exactly the previously verified deterministic ZIP; do not rebuild it after calculating its identity.
-3. Obtain the final HTTPS asset URL.
-4. Re-run `generate-release-descriptor.ps1` against the exact uploaded ZIP with the same artifact revision and final URL.
-5. Compare the regenerated descriptor's package size/SHA/runtime payload identity with the release report. A mismatch stops the release.
+1. Run `verify-runtime-release-inputs.ps1 -Path <frozen-r1.zip>` and require
+   `FROZEN RUNTIME UPLOAD PRECHECK: PASS`. The verifier reads the tracked R1
+   lock and performs no build, repack, extraction-to-runtime, or mutation. If it
+   fails, stop the release; do not rebuild replacement bytes and continue.
+2. With explicit user authorization, create the runtime-only tag/GitHub Release.
+3. Upload exactly the previously verified deterministic ZIP; do not rebuild it after calculating its identity.
+4. Obtain the final HTTPS asset URL.
+5. Re-run `generate-release-descriptor.ps1` against the exact uploaded ZIP with the same artifact revision and final URL.
+6. Compare the regenerated descriptor's package size/SHA/runtime payload identity with the release report. A mismatch stops the release.
 
 ## Final NeoForge artifact
 

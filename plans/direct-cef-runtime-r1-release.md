@@ -33,6 +33,23 @@ The external prepared tree and ZIP are not tracked by Git. The ZIP must not be
 rebuilt, renamed, or modified during an authorized release; upload exactly the
 frozen bytes above.
 
+The machine-readable authority is
+`plans/direct-cef-runtime-r1-lock.json` (`lockVersion: 1`). Before any authorized
+upload, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\direct-cef-runtime\verify-runtime-release-inputs.ps1 `
+  -Path <exact-frozen-r1-zip>
+```
+
+The wrapper must print `FROZEN RUNTIME UPLOAD PRECHECK: PASS`. It verifies the
+whole-file identity, safe/exact ZIP entry set, manifest identity, all manifest
+payload size/hashes, entrypoint hashes, notices, and unpacked payload total.
+Here, file count `241` means the distributed `runtime.json.files[]` payload;
+the ZIP has exactly one additional entry, `runtime.json`. A failure stops the
+release and does not authorize rebuilding a substitute.
+
 ## Entrypoints
 
 | Entrypoint | Size | SHA-256 |
@@ -70,6 +87,8 @@ license/notices were included in the frozen payload.
 - Default SNAPSHOT candidate rejection: **PASS**
 - `0.1.0-preview.1` candidate: **PASS**
 - Independent binary consumer: **PASS**
+- Frozen verifier synthetic failure matrix: **PASS (11/11)**
+- Exact local frozen ZIP upload precheck: **PASS**
 
 The standalone native smoke has no Minecraft WGL context, so its interop status
 is expected to be unsupported. The separate real Minecraft compatibility run

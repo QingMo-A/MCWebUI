@@ -483,6 +483,11 @@ are not run. Do not rebuild or substitute the ZIP. The next action requires
 explicit authorization to create `direct-cef-runtime-r1` and upload the exact
 frozen artifact.
 
+Any official Runtime R1 upload must first pass
+`scripts/direct-cef-runtime/verify-runtime-release-inputs.ps1` against the exact
+frozen ZIP and tracked `plans/direct-cef-runtime-r1-lock.json`; verifier failure
+means release STOP, not rebuild-and-retry with different bytes.
+
 ### Current checkpoint 19: Direct compatibility and source candidate
 
 Direct CEF now has two pre-runtime gates: a pure Windows/x86_64 static check and
