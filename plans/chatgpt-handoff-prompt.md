@@ -464,6 +464,25 @@ Do not automatically implement Forge just to achieve symmetry if the user curren
 
 When a major milestone finishes, update this handoff file's **Current checkpoint** so a future conversation can resume quickly.
 
+### Current checkpoint 20: Runtime R1 inputs frozen
+
+The exact external Direct CEF Runtime R1 was clean-built from source commit
+`740958afd63183e28e5b4d8168178ab7fb728d19`, assembled with CEF `LICENSE.txt`
+and Chromium `CREDITS.html`, manifested, independently repacked, and exercised
+through the exact LOCAL_FIXTURE download/import/discovery path. Both repacks are
+byte-identical at SHA-256
+`6B9DE0EF90869DB7C5966A6307516A886EB15B1AC6ED14BDBFD987DB912D4D6B`.
+The 241-file ZIP is named
+`mcwebui-direct-cef-runtime-cef-144.0.33-cb4715c-windows-x86_64-1.zip`, is
+164216473 compressed bytes and 394723009 unpacked payload bytes. Full immutable
+details are in `plans/direct-cef-runtime-r1-release.md`.
+
+This checkpoint is **FROZEN / NOT PUBLISHED**. Production URL is UNCONFIGURED;
+GitHub Release/tag/asset do not exist; REAL_RELEASE and official Setup acceptance
+are not run. Do not rebuild or substitute the ZIP. The next action requires
+explicit authorization to create `direct-cef-runtime-r1` and upload the exact
+frozen artifact.
+
 ### Current checkpoint 19: Direct compatibility and source candidate
 
 Direct CEF now has two pre-runtime gates: a pure Windows/x86_64 static check and

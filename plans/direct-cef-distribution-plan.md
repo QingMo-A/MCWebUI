@@ -1,6 +1,6 @@
 # Direct CEF runtime distribution plan
 
-Status: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / RELEASE PIPELINE READY / PRODUCTION SOURCE NOT CONFIGURED** (2026-08-14).
+Status: **PHASE A-B IMPLEMENTED / PHASE C CORE IMPLEMENTED / RUNTIME R1 INPUTS FROZEN / NOT PUBLISHED** (2026-08-16).
 
 This plan defines how MCWebUI distributes and locates the external Direct CEF runtime. Phase A implements the trusted manifest/discovery/validation/loading entrypoint for an already prepared directory; Phase B adds safe offline package import (staging, validation, atomic publish, repair/rollback) and a Minecraft setup screen. Phase C has a tested descriptor/downloader/install foundation and release preparation/embedding path, but MCWebUI deliberately ships **no production download descriptor, URL, or official runtime package yet**. Automatic installation is therefore not currently available to players.
 
@@ -776,3 +776,8 @@ converge on that same importer and validated-directory boundary. Production
 automatic download remains unavailable until an official package is published,
 its real HTTPS URL/size/SHA-256 are pinned in MCWebUI, and that exact path passes
 real-network acceptance. Manual offline import remains the supported path today.
+
+The byte-exact Runtime R1 dry-run package, entrypoint hashes, included notices,
+determinism evidence, and publication boundary are recorded in
+`plans/direct-cef-runtime-r1-release.md`. This freezes inputs only: its URL is
+`UNCONFIGURED`, REAL_RELEASE is not run, and no release/tag/upload is authorized.

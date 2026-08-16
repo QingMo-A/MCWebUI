@@ -1,6 +1,6 @@
 # Direct CEF runtime release checklist
 
-Status: **RELEASE PIPELINE READY / PRODUCTION SOURCE NOT CONFIGURED** (2026-08-14).
+Status: **RUNTIME R1 INPUTS FROZEN / NOT PUBLISHED** (2026-08-16).
 
 This is the operator checklist for publishing the external Direct CEF runtime and then a MCWebUI NeoForge Developer Preview. It does not authorize creating a tag, GitHub Release, uploading an asset, or publishing a mod artifact. Those actions require explicit user approval.
 
@@ -74,6 +74,11 @@ These steps are intentionally **not executed by the current checkpoint**:
 - existing Direct WebScreen regression passes.
 
 Current verdict: **RELEASE READY / WAITING FOR OFFICIAL ASSET**. The Developer Preview gate is not yet satisfied.
+
+The exact Runtime R1 inputs and hashes are frozen in
+`plans/direct-cef-runtime-r1-release.md`. Production URL remains unconfigured,
+and no GitHub Release, tag, or asset exists. The next action requires explicit
+user authorization.
 
 ## Source Developer Preview candidate checkpoint
 
