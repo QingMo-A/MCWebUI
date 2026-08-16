@@ -47,6 +47,7 @@ public final class NeoForgeClientEntrypoint {
     private static boolean openWhenWarm;
     private static boolean directWarmFrameLogged;
     private static boolean directWarmAttempted;
+    private static boolean manualSetupAcceptanceOpened;
     private static NeoForgeWebSession publicSession;
     private static final PendingWebAppOpen PENDING_PUBLIC_APP = new PendingWebAppOpen();
 
@@ -126,6 +127,7 @@ public final class NeoForgeClientEntrypoint {
         if (!backendReady && backendResolution.availability() == BackendAvailability.COMPATIBILITY_PENDING) {
             probeDirectCompatibilityIfReady();
         }
+        tryOpenManualSetupAcceptance();
         if (!backendReady) {
             if (clicked) openUnavailableScreen();
             return;
@@ -369,6 +371,32 @@ public final class NeoForgeClientEntrypoint {
                 probe, previous, NeoForgeClientEntrypoint::openDirectWebScreen));
     }
 
+    /**
+     * Target-local, explicit developer hook for the manual Setup Screen matrix.
+     * It uses the normal compatibility probe, release catalog, discovery and
+     * validation paths; only the automatic opening of the existing Screen is
+     * special. Production runs never set this property.
+     */
+    private static void tryOpenManualSetupAcceptance() {
+        if (manualSetupAcceptanceOpened
+                || !Boolean.getBoolean("mcwebui.dev.manualSetupAcceptance")
+                || !directCefSelected()
+                || directGraphicsCompatibility.status() != DirectCefGraphicsCompatibility.Status.SUPPORTED
+                || MINECRAFT.screen == null) {
+            return;
+        }
+        DirectCefRuntimeDiscovery.Probe probe = probeDirectRuntime();
+        manualSetupAcceptanceOpened = true;
+        LOGGER.info("MCWebUI opening isolated Direct CEF manual Setup acceptance screen; runtimeValid={}",
+                probe.valid());
+        if (!probe.valid()) {
+            markDirectRuntimeMissing(probe);
+        }
+        Screen previous = MINECRAFT.screen;
+        MINECRAFT.setScreen(new DirectCefRuntimeSetupScreen(NeoForgeWebSession.directCefInstanceRoot(),
+                probe, previous, NeoForgeClientEntrypoint::openDirectWebScreen));
+    }
+
     private static void markDirectRuntimeMissing(DirectCefRuntimeDiscovery.Probe probe) {
         backendFailure = probe.failure() == null ? "Direct CEF runtime is missing or invalid."
                 : probe.failure().getMessage();
@@ -440,6 +468,7 @@ public final class NeoForgeClientEntrypoint {
         openWhenWarm = false;
         directWarmFrameLogged = false;
         directWarmAttempted = false;
+        manualSetupAcceptanceOpened = false;
     }
 
     static boolean directCefSelected() {
