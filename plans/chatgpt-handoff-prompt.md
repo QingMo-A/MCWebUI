@@ -463,3 +463,20 @@ Do not over-design a permanent UI design system yet. The showcase should first p
 Do not automatically implement Forge just to achieve symmetry if the user currently wants to focus on NeoForge. Instead make sure every new common/frontend abstraction remains portable, and record any NeoForge-only API behind target/backend ports. Add Forge when the user chooses to validate that target or when a design decision genuinely requires cross-target proof.
 
 When a major milestone finishes, update this handoff file's **Current checkpoint** so a future conversation can resume quickly.
+
+### Current checkpoint 19: Direct compatibility and source candidate
+
+Direct CEF now has two pre-runtime gates: a pure Windows/x86_64 static check and
+a render-thread WGL capability probe. The probe requires NV_DX_interop,
+NV_DX_interop2, and the exact entry points used by the runtime, but vendor
+strings are diagnostics only. AUTO keeps MCEF precedence; unsupported or
+unprobed graphics never opens runtime Setup or hidden prewarm. A public immutable
+NeoForge compatibility snapshot exposes the result without leaking LWJGL/CEF.
+
+The real host run passed on an NVIDIA RTX 5060 Ti with bridge handshake,
+accelerated mailbox generations, one registered interop slot, balanced lock/
+unlock, and zero failures. AMD/Intel remain not verified and there is no CPU
+fallback. The source-only `0.1.0-preview.1` candidate gate propagates the version
+through the independent consumer proof, rejects the default SNAPSHOT, audits the
+JAR, and records an exact source SHA/checksum. Production runtime source remains
+unconfigured and publication remains blocked pending explicit authorization.

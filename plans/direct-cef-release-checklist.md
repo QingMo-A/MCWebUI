@@ -74,3 +74,25 @@ These steps are intentionally **not executed by the current checkpoint**:
 - existing Direct WebScreen regression passes.
 
 Current verdict: **RELEASE READY / WAITING FOR OFFICIAL ASSET**. The Developer Preview gate is not yet satisfied.
+
+## Source Developer Preview candidate checkpoint
+
+- Static support is Windows x86_64 only; Windows ARM64/x86 and non-Windows
+  hosts stop before runtime discovery or Setup.
+- The current render-thread OpenGL context must expose both required WGL/NV
+  interop extensions and all used entry points. `NOT_PROBED`, `UNSUPPORTED`,
+  and `PROBE_FAILED` are not runtime-missing states and must not offer download.
+- AUTO still chooses installed MCEF first. Hidden prewarm starts only after the
+  static and graphics gates report supported.
+- NVIDIA RTX 5060 Ti is the only automated vendor evidence at this checkpoint;
+  AMD and Intel are **NOT VERIFIED**. Do not infer a vendor restriction from
+  the diagnostic strings, and do not claim a CPU fallback.
+- Run the default candidate task once and require its SNAPSHOT rejection. Then
+  run `prepareDeveloperPreviewCandidate` with quoted
+  `-PmcwebuiVersion=0.1.0-preview.1` from a clean tracked worktree.
+- Audit `candidate-report.json`, `checksums.txt`, and the copied NeoForge JAR.
+  The report must contain the exact Git SHA, SHA-256, zero native leakage,
+  `productionRuntimeSource=UNCONFIGURED`, and publication blocked waiting for
+  the official runtime.
+- Candidate output is local evidence only. Do not create a tag, release, asset,
+  Maven publication, or mod distribution without explicit user authorization.

@@ -78,3 +78,24 @@ architecture check, `verifyConsumerSample`, artifact metadata inspection, and
 JAR native/runtime leakage audit. Direct CEF release A/B/C verification remains
 unchanged. This checkpoint can be called deployment-ready only after all gates
 pass from a clean staging directory.
+
+## Direct CEF compatibility and source candidate
+
+Direct CEF eligibility is now split into a pure static host check and a
+render-thread graphics probe. The static gate accepts only Windows x86_64
+aliases. The graphics gate requires `WGL_NV_DX_interop`,
+`WGL_NV_DX_interop2`, and every WGL/DX entry point used by the runtime. It does
+not load the Direct CEF DLL, CEF, or create a browser. AUTO continues to prefer
+MCEF; runtime Setup and hidden prewarm are reachable only after both Direct
+gates pass. GPU vendor/renderer/version are diagnostics, never a vendor gate.
+
+The automated host evidence for this checkpoint is NVIDIA-only. AMD and Intel
+remain unverified and no CPU-copy fallback exists. The public NeoForge facade
+exposes an immutable compatibility snapshot without changing the existing
+backend-status record constructor.
+
+`mcwebuiVersion` defaults to `0.1.0-SNAPSHOT`. A clean-tree source candidate is
+prepared only with an explicit non-SNAPSHOT version via
+`prepareDeveloperPreviewCandidate`; it runs the frontend, target, architecture,
+binary-consumer, and JAR leakage gates and writes only ignored local artifacts.
+It does not publish, tag, upload, or configure an official runtime source.
