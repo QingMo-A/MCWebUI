@@ -9,6 +9,7 @@ import net.minecraft.Util;
 
 import java.nio.file.Path;
 import java.util.Objects;
+import dev.qingmo.mcwebui.api.neoforge.MCWebUIDirectCompatibility;
 
 /** Plain Minecraft recovery UI that remains usable when no browser can start. */
 final class MCWebUIBackendUnavailableScreen extends Screen {
@@ -16,12 +17,15 @@ final class MCWebUIBackendUnavailableScreen extends Screen {
     private final Runnable retry;
     private final String selectedBackend;
     private final String reason;
+    private final MCWebUIDirectCompatibility compatibility;
 
-    MCWebUIBackendUnavailableScreen(Screen previous, String selectedBackend, String reason, Runnable retry) {
+    MCWebUIBackendUnavailableScreen(Screen previous, String selectedBackend, String reason,
+                                    MCWebUIDirectCompatibility compatibility, Runnable retry) {
         super(Component.literal("MCWebUI Browser Backend Unavailable"));
         this.previous = previous;
         this.selectedBackend = Objects.requireNonNull(selectedBackend, "selectedBackend");
         this.reason = Objects.requireNonNull(reason, "reason");
+        this.compatibility = Objects.requireNonNull(compatibility, "compatibility");
         this.retry = Objects.requireNonNull(retry, "retry");
     }
 
@@ -45,6 +49,10 @@ final class MCWebUIBackendUnavailableScreen extends Screen {
         graphics.drawCenteredString(font,
                 Component.literal("Change browserBackend in config/mcwebui-client.toml, then Retry."),
                 center, height / 2 + 8, 0xAAAAAA);
+        if (!compatibility.glRenderer().isBlank()) {
+            graphics.drawCenteredString(font, Component.literal("GPU: " + compatibility.glRenderer()),
+                    center, height / 2 + 24, 0x888888);
+        }
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

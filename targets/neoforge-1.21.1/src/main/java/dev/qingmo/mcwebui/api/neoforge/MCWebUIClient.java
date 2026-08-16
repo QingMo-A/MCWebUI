@@ -27,4 +27,8 @@ public final class MCWebUIClient {
     public static MCWebUIEnvironment environment() {
         return dev.qingmo.mcwebui.target.neoforge1211.NeoForgeClientEntrypoint.environment();
     }
+
+    public static MCWebUIDirectCompatibility directCompatibility() {
+        return dev.qingmo.mcwebui.target.neoforge1211.NeoForgeClientEntrypoint.directCompatibility();
+    }
 }

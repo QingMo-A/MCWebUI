@@ -13,6 +13,16 @@ final class NeoForgeBackendSelection {
     }
 
     static Resolution resolve(BrowserBackendPreference preference, boolean mcefInstalled, boolean windows) {
+        DirectCefStaticCompatibility.Result staticCompatibility = DirectCefStaticCompatibility.evaluate(
+                windows ? "Windows" : "Other", "amd64");
+        DirectCefGraphicsCompatibility.Result graphicsCompatibility =
+                DirectCefGraphicsCompatibility.evaluate(true, true, true, true, "", "", "", null);
+        return resolve(preference, mcefInstalled, staticCompatibility, graphicsCompatibility);
+    }
+
+    static Resolution resolve(BrowserBackendPreference preference, boolean mcefInstalled,
+                              DirectCefStaticCompatibility.Result staticCompatibility,
+                              DirectCefGraphicsCompatibility.Result graphicsCompatibility) {
         return switch (preference) {
             case MCEF -> mcefInstalled
                     ? available(preference, ResolvedBrowserBackend.MCEF)
@@ -23,18 +33,34 @@ final class NeoForgeBackendSelection {
                     ? unavailable(preference, ResolvedBrowserBackend.DIRECT_CEF,
                     BackendAvailability.INITIALIZATION_FAILED,
                     "Direct CEF cannot start while the MCEF mod is loaded. Remove MCEF and restart to avoid loading two CEF runtimes.")
-                    : windows
-                    ? available(preference, ResolvedBrowserBackend.DIRECT_CEF)
-                    : unavailable(preference, ResolvedBrowserBackend.DIRECT_CEF,
-                    BackendAvailability.UNSUPPORTED_PLATFORM,
-                    "Direct CEF currently requires 64-bit Windows.");
+                    : resolveDirect(preference, staticCompatibility, graphicsCompatibility);
             case AUTO -> mcefInstalled
                     ? available(preference, ResolvedBrowserBackend.MCEF)
-                    : windows
-                    ? available(preference, ResolvedBrowserBackend.DIRECT_CEF)
-                    : unavailable(preference, ResolvedBrowserBackend.NONE,
-                    BackendAvailability.MISSING_DEPENDENCY,
-                    "No supported browser backend is available. Install MCEF.");
+                    : resolveDirect(preference, staticCompatibility, graphicsCompatibility);
+        };
+    }
+
+    private static Resolution resolveDirect(BrowserBackendPreference preference,
+                                            DirectCefStaticCompatibility.Result staticCompatibility,
+                                            DirectCefGraphicsCompatibility.Result graphicsCompatibility) {
+        if (staticCompatibility.status() == DirectCefStaticCompatibility.Status.UNSUPPORTED_PLATFORM) {
+            return unavailable(preference, preference == BrowserBackendPreference.AUTO
+                            ? ResolvedBrowserBackend.NONE : ResolvedBrowserBackend.DIRECT_CEF,
+                    BackendAvailability.UNSUPPORTED_PLATFORM, staticCompatibility.reason());
+        }
+        if (staticCompatibility.status() == DirectCefStaticCompatibility.Status.UNSUPPORTED_ARCHITECTURE) {
+            return unavailable(preference, preference == BrowserBackendPreference.AUTO
+                            ? ResolvedBrowserBackend.NONE : ResolvedBrowserBackend.DIRECT_CEF,
+                    BackendAvailability.UNSUPPORTED_ARCHITECTURE, staticCompatibility.reason());
+        }
+        return switch (graphicsCompatibility.status()) {
+            case SUPPORTED -> available(preference, ResolvedBrowserBackend.DIRECT_CEF);
+            case NOT_PROBED -> unavailable(preference, ResolvedBrowserBackend.DIRECT_CEF,
+                    BackendAvailability.COMPATIBILITY_PENDING, graphicsCompatibility.reason());
+            case UNSUPPORTED, PROBE_FAILED -> unavailable(preference,
+                    preference == BrowserBackendPreference.AUTO
+                            ? ResolvedBrowserBackend.NONE : ResolvedBrowserBackend.DIRECT_CEF,
+                    BackendAvailability.UNSUPPORTED_GRAPHICS, graphicsCompatibility.reason());
         };
     }
 
@@ -54,5 +80,11 @@ final class NeoForgeBackendSelection {
     static boolean shouldOpenWarmSession(boolean requested, boolean sessionPresent,
                                          boolean renderableFrame, boolean alreadyOpen) {
         return requested && sessionPresent && renderableFrame && !alreadyOpen;
+    }
+
+    static boolean shouldOfferRuntimeSetup(BackendAvailability availability,
+                                           DirectCefGraphicsCompatibility.Status graphicsStatus) {
+        return availability == BackendAvailability.RUNTIME_MISSING
+                && graphicsStatus == DirectCefGraphicsCompatibility.Status.SUPPORTED;
     }
 }

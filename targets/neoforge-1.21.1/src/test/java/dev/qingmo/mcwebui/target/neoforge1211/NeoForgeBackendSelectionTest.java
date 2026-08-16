@@ -44,4 +44,35 @@ class NeoForgeBackendSelectionTest {
         assertEquals(ResolvedBrowserBackend.NONE, none.backend());
         assertNotEquals(BackendAvailability.AVAILABLE, none.availability());
     }
+
+    @Test void directAndAutoWaitForGraphicsAndRejectUnsupportedInterop() {
+        var eligible = DirectCefStaticCompatibility.evaluate("Windows 11", "amd64");
+        var pending = DirectCefGraphicsCompatibility.Result.notProbed("waiting");
+        var unsupported = DirectCefGraphicsCompatibility.evaluate(true, true, false, true,
+                "Vendor", "Renderer", "4.6", null);
+
+        var directPending = NeoForgeBackendSelection.resolve(
+                BrowserBackendPreference.DIRECT_CEF, false, eligible, pending);
+        assertEquals(ResolvedBrowserBackend.DIRECT_CEF, directPending.backend());
+        assertEquals(BackendAvailability.COMPATIBILITY_PENDING, directPending.availability());
+
+        var directUnsupported = NeoForgeBackendSelection.resolve(
+                BrowserBackendPreference.DIRECT_CEF, false, eligible, unsupported);
+        assertEquals(ResolvedBrowserBackend.DIRECT_CEF, directUnsupported.backend());
+        assertEquals(BackendAvailability.UNSUPPORTED_GRAPHICS, directUnsupported.availability());
+
+        var autoUnsupported = NeoForgeBackendSelection.resolve(
+                BrowserBackendPreference.AUTO, false, eligible, unsupported);
+        assertEquals(ResolvedBrowserBackend.NONE, autoUnsupported.backend());
+        assertEquals(BackendAvailability.UNSUPPORTED_GRAPHICS, autoUnsupported.availability());
+    }
+
+    @Test void runtimeSetupIsOfferedOnlyAfterSupportedGraphics() {
+        assertTrue(NeoForgeBackendSelection.shouldOfferRuntimeSetup(
+                BackendAvailability.RUNTIME_MISSING, DirectCefGraphicsCompatibility.Status.SUPPORTED));
+        assertFalse(NeoForgeBackendSelection.shouldOfferRuntimeSetup(
+                BackendAvailability.RUNTIME_MISSING, DirectCefGraphicsCompatibility.Status.UNSUPPORTED));
+        assertFalse(NeoForgeBackendSelection.shouldOfferRuntimeSetup(
+                BackendAvailability.UNSUPPORTED_GRAPHICS, DirectCefGraphicsCompatibility.Status.SUPPORTED));
+    }
 }

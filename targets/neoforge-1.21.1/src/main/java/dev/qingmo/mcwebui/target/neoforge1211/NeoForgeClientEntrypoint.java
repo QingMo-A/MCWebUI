@@ -9,6 +9,7 @@ import dev.qingmo.mcwebui.api.WebAppId;
 import dev.qingmo.mcwebui.api.WebAppRegistry;
 import dev.qingmo.mcwebui.api.neoforge.MCWebUIBackendStatus;
 import dev.qingmo.mcwebui.api.neoforge.MCWebUIEnvironment;
+import dev.qingmo.mcwebui.api.neoforge.MCWebUIDirectCompatibility;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -35,6 +36,11 @@ public final class NeoForgeClientEntrypoint {
                     ResolvedBrowserBackend.NONE, BackendAvailability.INITIALIZATION_FAILED,
                     "Backend selection has not been initialized.");
     private static volatile String backendFailure = "";
+    private static volatile DirectCefStaticCompatibility.Result directStaticCompatibility =
+            DirectCefStaticCompatibility.evaluate(System.getProperty("os.name", ""),
+                    System.getProperty("os.arch", ""));
+    private static volatile DirectCefGraphicsCompatibility.Result directGraphicsCompatibility =
+            DirectCefGraphicsCompatibility.Result.notProbed("Graphics capability has not been probed.");
     private static NeoForgeWebSession warmSession;
     private static NeoForgeWebSession directSession;
     private static boolean warmFrameLogged;
@@ -94,8 +100,12 @@ public final class NeoForgeClientEntrypoint {
         try {
             BrowserBackendPreference preference = NeoForgeBackendSelection.preference(property,
                     NeoForgeMod.CLIENT_CONFIG.browserBackend());
+            directStaticCompatibility = DirectCefStaticCompatibility.evaluate(
+                    System.getProperty("os.name", ""), System.getProperty("os.arch", ""));
+            directGraphicsCompatibility = DirectCefGraphicsCompatibility.Result.notProbed(
+                    "Waiting for Minecraft's current WGL/OpenGL context.");
             backendResolution = NeoForgeBackendSelection.resolve(preference,
-                    ModList.get().isLoaded("mcef"), isWindows());
+                    ModList.get().isLoaded("mcef"), directStaticCompatibility, directGraphicsCompatibility);
             backendFailure = backendResolution.reason();
         } catch (RuntimeException invalid) {
             String value = property == null ? String.valueOf(NeoForgeMod.CLIENT_CONFIG.browserBackend()) : property;
@@ -113,6 +123,9 @@ public final class NeoForgeClientEntrypoint {
 
     private static void tick(ClientTickEvent.Post event) {
         boolean clicked = OPEN_DEMO.consumeClick();
+        if (!backendReady && backendResolution.availability() == BackendAvailability.COMPATIBILITY_PENDING) {
+            probeDirectCompatibilityIfReady();
+        }
         if (!backendReady) {
             if (clicked) openUnavailableScreen();
             return;
@@ -210,6 +223,7 @@ public final class NeoForgeClientEntrypoint {
                 if (!probe.valid()) {
                     LOGGER.warn("MCWebUI Direct CEF runtime is unavailable ({}); opening the runtime setup screen",
                             probe.failure().reason());
+                    markDirectRuntimeMissing(probe);
                     openDirectSetupScreen(probe);
                 } else {
                     MINECRAFT.setScreen(unavailableScreen(MINECRAFT.screen));
@@ -226,6 +240,9 @@ public final class NeoForgeClientEntrypoint {
             throw new IllegalStateException("createScreen must be called on the Minecraft client thread; use open instead");
         }
         WebAppDefinition definition = WebAppRegistry.process().require(id);
+        if (!backendReady && backendResolution.availability() == BackendAvailability.COMPATIBILITY_PENDING) {
+            probeDirectCompatibilityIfReady();
+        }
         if (!backendReady) return unavailableScreen(MINECRAFT.screen);
         if (directCefSelected()) {
             DirectCefRuntimeDiscovery.Probe probe = probeDirectRuntime();
@@ -275,8 +292,11 @@ public final class NeoForgeClientEntrypoint {
     private static Screen unavailableScreen(Screen previous) {
         String reason = backendFailure.isBlank() ? backendResolution.reason() : backendFailure;
         return new MCWebUIBackendUnavailableScreen(previous, backendResolution.backend().externalName(),
-                reason.isBlank() ? "The selected backend is not ready." : reason, () -> {
+                reason.isBlank() ? "The selected backend is not ready." : reason, directCompatibility(), () -> {
             resolveBackendSelection();
+            if (backendResolution.availability() == BackendAvailability.COMPATIBILITY_PENDING) {
+                probeDirectCompatibilityIfReady();
+            }
             if (backendResolution.availability() == BackendAvailability.AVAILABLE) {
                 if (backendResolution.backend() == ResolvedBrowserBackend.DIRECT_CEF) backendReady = true;
                 else NeoForgeMcefBootstrap.init();
@@ -300,6 +320,31 @@ public final class NeoForgeClientEntrypoint {
                 Runtime.version().feature(), os, isWindows(), ModList.get().isLoaded("mcef"));
     }
 
+    public static MCWebUIDirectCompatibility directCompatibility() {
+        String reason = !directStaticCompatibility.eligible()
+                ? directStaticCompatibility.reason() : directGraphicsCompatibility.reason();
+        return new MCWebUIDirectCompatibility(directStaticCompatibility.status().name(),
+                directGraphicsCompatibility.status().name(), directStaticCompatibility.architecture(),
+                DirectCefGraphicsCompatibility.REQUIRED_INTEROP,
+                directGraphicsCompatibility.vendor(), directGraphicsCompatibility.renderer(),
+                directGraphicsCompatibility.version(), reason);
+    }
+
+    private static void probeDirectCompatibilityIfReady() {
+        if (!MINECRAFT.isSameThread() || !directStaticCompatibility.eligible()) return;
+        directGraphicsCompatibility = DirectCefHostCompatibilityProbe.probe(directStaticCompatibility);
+        backendResolution = NeoForgeBackendSelection.resolve(backendResolution.preference(),
+                ModList.get().isLoaded("mcef"), directStaticCompatibility, directGraphicsCompatibility);
+        backendFailure = backendResolution.reason();
+        backendReady = backendResolution.availability() == BackendAvailability.AVAILABLE;
+        if (directGraphicsCompatibility.status() != DirectCefGraphicsCompatibility.Status.NOT_PROBED) {
+            LOGGER.info("MCWebUI Direct compatibility static={} graphics={} arch={} vendor={} renderer={}",
+                    directStaticCompatibility.status(), directGraphicsCompatibility.status(),
+                    directStaticCompatibility.architecture(), directGraphicsCompatibility.vendor(),
+                    directGraphicsCompatibility.renderer());
+        }
+    }
+
     private static void closePublicSession() {
         if (publicSession != null) {
             publicSession.close();
@@ -315,6 +360,11 @@ public final class NeoForgeClientEntrypoint {
 
     private static void openDirectSetupScreen(DirectCefRuntimeDiscovery.Probe probe) {
         Screen previous = MINECRAFT.screen;
+        if (!NeoForgeBackendSelection.shouldOfferRuntimeSetup(backendResolution.availability(),
+                directGraphicsCompatibility.status())) {
+            MINECRAFT.setScreen(unavailableScreen(previous));
+            return;
+        }
         MINECRAFT.setScreen(new DirectCefRuntimeSetupScreen(NeoForgeWebSession.directCefInstanceRoot(),
                 probe, previous, NeoForgeClientEntrypoint::openDirectWebScreen));
     }
