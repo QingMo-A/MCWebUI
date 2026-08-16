@@ -1,0 +1,19 @@
+{
+  "descriptorVersion": 1,
+  "artifactId": "mcwebui-direct-cef-cef-144.0.33-cb4715c-windows-x86_64-1",
+  "artifactRevision": "1",
+  "packageFileName": "mcwebui-direct-cef-runtime-cef-144.0.33-cb4715c-windows-x86_64-1.zip",
+  "packageSize": 164216473,
+  "runtimePayloadSize": 394723009,
+  "packageSha256": "6B9DE0EF90869DB7C5966A6307516A886EB15B1AC6ED14BDBFD987DB912D4D6B",
+  "runtime": {
+    "schemaVersion": 1,
+    "runtimeId": "cef-144.0.33-cb4715c",
+    "mcwebuiRuntimeAbi": 1,
+    "cefVersion": "144.0.33",
+    "chromiumVersion": "144.0.7559.259",
+    "platform": "windows",
+    "arch": "x86_64"
+  },
+  "downloadUri": "https://github.com/QingMo-A/MCWebUI/releases/download/direct-cef-runtime-r1/mcwebui-direct-cef-runtime-cef-144.0.33-cb4715c-windows-x86_64-1.zip"
+}

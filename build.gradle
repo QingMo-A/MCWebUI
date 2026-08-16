@@ -398,7 +398,7 @@ def candidateTask = tasks.register('prepareDeveloperPreviewCandidate') {
         report.put('consumerBinaryProof', 'PASS')
         report.put('nativeRuntimeLeakage', nativeLeakage)
         report.put('publication', sourceConfigured
-                ? 'BLOCKED_PENDING_REAL_RELEASE_ACCEPTANCE'
+                ? 'BLOCKED_PENDING_MANUAL_SETUP_ACCEPTANCE'
                 : 'BLOCKED_WAITING_FOR_OFFICIAL_RUNTIME')
         new File(output, 'candidate-report.json').setText(
                 groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(report)) + System.lineSeparator(), 'UTF-8')
